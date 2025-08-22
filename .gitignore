@@ -1,0 +1,112 @@
+# 数据库数据目录
+weaviate_db_data/
+neo4j_db_data/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+develop-eggs/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 环境
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.installed.cfg
+lib/
+lib64/
+pip-wheel-metadata/
+*.manifest
+*.spec
+
+# Jupyter Notebook 检查点
+.ipynb_checkpoints
+
+# 单元测试缓存
+.cache/
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# mypy 类型检查
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# pyre 类型检查
+.pyre/
+
+# profiling 文件
+.prof
+*.pstat
+*.dat
+*.log
+
+# 编辑器/IDE 配置
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS 文件
+.DS_Store
+Thumbs.db
+
+# 安装 lock 文件（可选）
+poetry.lock
+Pipfile.lock
+
+# dotenv 文件（如含敏感配置）
+.env
+.env.*
+
+# Jupyter Lab workspace 配置（可选）
+.lab/
+
+# Pydantic cache（如果启用 compiled models）
+__pydantic__/ 
+
+# 本地数据库（如 SQLite）
+*.sqlite3
+*.db
+*.db-journal
+
+# 错误日志
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 测试
+.coverage
+.pytest_cache/
+htmlcov/
+
+# uv
+.uv/

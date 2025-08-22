@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  weaviate:
+    image: semitechnologies/weaviate:1.32.2
+    ports:
+      - "8855:8080"
+    environment:
+      - QUERY_DEFAULTS_LIMIT=25
+      - AUTHENTICATION_APIKEY_ENABLED=true
+      - AUTHENTICATION_APIKEY_ALLOWED_KEYS=abc-abc
+      - AUTHENTICATION_APIKEY_USERS=admin
+      - AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED=true
+      - PERSISTENCE_DATA_PATH=/var/lib/weaviate
+      - DEFAULT_VECTORIZER_MODULE=text2vec-openai
+      - ENABLE_MODULES=text2vec-openai
+      - CLUSTER_HOSTNAME=node1
+    volumes:
+      - ./weaviate_db_data:/var/lib/weaviate
+    restart: on-failure:0
+
+  neo4j:
+    image: neo4j:5.26.10
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      - NEO4J_AUTH=neo4j/password
+      - NEO4J_PLUGINS=["apoc"]
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*
+    volumes:
+      - ./neo4j_db_data:/data
+      - ./neo4j_db_data/logs:/logs
+      - ./neo4j_db_data/import:/var/lib/neo4j/import
+      - ./neo4j_db_data/plugins:/plugins
+    restart: unless-stopped
