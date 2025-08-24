@@ -89,6 +89,13 @@ docker-compose ps
 ```bash
 # 启动FastAPI服务
 python -m uvicorn ai_knowledge_base.interface.api:app --reload --host 0.0.0.0 --port 8000
+# python -m uvicorn agent_runtime/main.py
+python -m uvicorn agent_runtime.main:app --reload --host 0.0.0.0 --port 8011
+
+bash
+
+
+
 ```
 
 API文档访问地址：

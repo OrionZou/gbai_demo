@@ -16,7 +16,7 @@ class EmbeddingConfig(BaseModel):
     model_name: str = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
     base_url: Optional[str] = os.getenv("EMBEDDINGI_BASE_URL")
     dimensions: int = int(os.getenv("EMBEDDING_DIMENSIONS", "1024"))
-    timeout: float = float(os.getenv("OPENAI_TIMEOUT", "180.0"))
+    timeout: float = float(os.getenv("EMBEDDING_TIMEOUT", "180.0"))
     batch_size: int = int(os.getenv("EMBEDDING_BATCH_SIZE", "10"))
 
 

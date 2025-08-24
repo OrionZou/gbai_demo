@@ -21,12 +21,8 @@ except ImportError:
     BaseModel = object
 
 from workbook_ai.application.services import DataImportService
-from workbook_ai.domain.entities import (
-    ConversationRecord, 
-    ImportResult, 
-    QueryResult
-)
-
+from workbook_ai.domain.entities import (ConversationRecord, ImportResult,
+                                         QueryResult)
 
 logger = logging.getLogger(__name__)
 
@@ -50,14 +46,11 @@ class HistoryRequest(BaseModel):
 
 # 创建FastAPI应用
 if FastAPI:
-    app = FastAPI(
-        title="AI知识库API",
-        description="基于DDD架构的AI知识库系统API",
-        version="1.0.0"
-    )
+    app = FastAPI(title="AI知识库API",
+                  description="基于DDD架构的AI知识库系统API",
+                  version="1.0.0")
 else:
     app = None
-
 
 # 初始化服务
 data_import_service = DataImportService()
@@ -89,14 +82,14 @@ async def import_csv_data(request: ImportCSVRequest):
     try:
         logger.info("开始导入CSV数据")
         result = data_import_service.import_from_csv(request.csv_content)
-        
+
         if result.success:
             logger.info(f"CSV导入成功: {result.imported_records}条记录")
         else:
             logger.warning(f"CSV导入部分失败: {result.error_messages}")
-        
+
         return result
-        
+
     except Exception as e:
         logger.error(f"CSV导入API调用失败: {e}")
         raise HTTPException(status_code=500, detail=f"导入失败: {e}")
@@ -116,31 +109,29 @@ async def import_csv_file(file: UploadFile = File(...)):
     try:
         # 检查文件类型
         if not file.filename.endswith('.csv'):
-            raise HTTPException(
-                status_code=400, 
-                detail="只支持CSV文件格式"
-            )
-        
+            raise HTTPException(status_code=400, detail="只支持CSV文件格式")
+
         # 读取文件内容
         content = await file.read()
         csv_content = content.decode('utf-8')
-        
+
         logger.info(f"开始导入CSV文件: {file.filename}")
         result = data_import_service.import_from_csv(csv_content)
-        
+
         if result.success:
             logger.info(f"CSV文件导入成功: {result.imported_records}条记录")
         else:
             logger.warning(f"CSV文件导入部分失败: {result.error_messages}")
-        
+
         return result
-        
+
     except Exception as e:
         logger.error(f"CSV文件导入API调用失败: {e}")
         raise HTTPException(status_code=500, detail=f"文件导入失败: {e}")
 
 
-@app.post("/query/similar", response_model=QueryResult) if app else lambda: None
+@app.post("/query/similar",
+          response_model=QueryResult) if app else lambda: None
 async def query_similar_conversations(request: QueryRequest):
     """
     查询相似对话
@@ -154,13 +145,11 @@ async def query_similar_conversations(request: QueryRequest):
     try:
         logger.info(f"开始查询相似对话: {request.query_text}")
         result = data_import_service.query_similar_conversations(
-            query_text=request.query_text,
-            limit=request.limit
-        )
-        
+            query_text=request.query_text, limit=request.limit)
+
         logger.info(f"查询完成，返回{result.total_count}条结果")
         return result
-        
+
     except Exception as e:
         logger.error(f"相似对话查询API调用失败: {e}")
         raise HTTPException(status_code=500, detail=f"查询失败: {e}")
@@ -180,12 +169,11 @@ async def get_conversation_history(request: HistoryRequest):
     try:
         logger.info(f"开始获取对话历史: {request.record_id}")
         history = data_import_service.get_conversation_history(
-            record_id=request.record_id
-        )
-        
+            record_id=request.record_id)
+
         logger.info(f"获取历史记录完成，共{len(history)}条记录")
         return history
-        
+
     except Exception as e:
         logger.error(f"对话历史查询API调用失败: {e}")
         raise HTTPException(status_code=500, detail=f"历史查询失败: {e}")
@@ -204,13 +192,11 @@ async def get_record_by_id(record_id: str):
     """
     try:
         logger.info(f"开始获取记录: {record_id}")
-        
+
         # 通过查询服务获取记录
         result = data_import_service.query_similar_conversations(
-            query_text=record_id,
-            limit=1
-        )
-        
+            query_text=record_id, limit=1)
+
         if result.results:
             record = result.results[0]
             logger.info(f"成功获取记录: {record_id}")
@@ -218,7 +204,7 @@ async def get_record_by_id(record_id: str):
         else:
             logger.warning(f"记录不存在: {record_id}")
             raise HTTPException(status_code=404, detail="记录不存在")
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -236,13 +222,18 @@ async def get_database_stats():
     """
     try:
         logger.info("开始获取数据库统计信息")
-        
+
         stats = {
-            "weaviate_status": "connected" if data_import_service.weaviate_client else "disconnected",
-            "neo4j_status": "connected" if data_import_service.neo4j_client else "disconnected",
-            "service_status": "running"
+            "weaviate_status":
+            "connected"
+            if data_import_service.weaviate_client else "disconnected",
+            "neo4j_status":
+            "connected"
+            if data_import_service.neo4j_client else "disconnected",
+            "service_status":
+            "running"
         }
-        
+
         # 尝试获取更详细的统计信息
         try:
             if data_import_service.weaviate_client:
@@ -250,17 +241,18 @@ async def get_database_stats():
                 stats["weaviate_collections"] = len(schema.get("classes", []))
         except:
             pass
-        
+
         try:
             if data_import_service.neo4j_client:
-                transitions = data_import_service.neo4j_client.get_state_transitions()
+                transitions = data_import_service.neo4j_client.get_state_transitions(
+                )
                 stats["neo4j_state_transitions"] = len(transitions)
         except:
             pass
-        
+
         logger.info("数据库统计信息获取完成")
         return stats
-        
+
     except Exception as e:
         logger.error(f"获取数据库统计信息失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取统计信息失败: {e}")
@@ -271,10 +263,7 @@ async def get_database_stats():
 async def global_exception_handler(request, exc):
     """全局异常处理器"""
     logger.error(f"未处理的异常: {exc}")
-    return JSONResponse(
-        status_code=500,
-        content={"detail": "内部服务器错误"}
-    )
+    return JSONResponse(status_code=500, content={"detail": "内部服务器错误"})
 
 
 # 启动函数
@@ -282,7 +271,7 @@ def create_app() -> FastAPI:
     """创建FastAPI应用实例"""
     if not app:
         raise RuntimeError("FastAPI未安装，请运行: pip install fastapi uvicorn")
-    
+
     logger.info("AI知识库API服务已启动")
     return app
 
@@ -290,12 +279,10 @@ def create_app() -> FastAPI:
 if __name__ == "__main__":
     try:
         import uvicorn
-        uvicorn.run(
-            "ai_knowledge_base.interface.api:app",
-            host="0.0.0.0",
-            port=8000,
-            reload=True
-        )
+        uvicorn.run("ai_knowledge_base.interface.api:app",
+                    host="0.0.0.0",
+                    port=8000,
+                    reload=True)
     except ImportError:
         print("uvicorn未安装，请运行: pip install uvicorn")
     except Exception as e:
