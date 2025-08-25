@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from agent_runtime.services.reward_service import RewardService, RewardRusult
 from agent_runtime.clients.llm.openai_client import LLM
 from agent_runtime.config.loader import SettingLoader, LLMSetting
+from agent_runtime.services.backward_service import BackwardService
 
 router = APIRouter()
 
@@ -14,9 +15,6 @@ class RewardRequest(BaseModel):
     candidates: List[str]
     target_answer: str
 
-
-# def get_reward_service(llm_client: LLM = Depends(), ) -> RewardService:
-#     return RewardService(llm_client)
 
 llm_client = LLM()
 reward_service = RewardService(llm_client)
@@ -79,25 +77,23 @@ async def get_config() -> dict:
 
 
 @router.post("/config")
-async def set_config(
-    cfg: LLMSetting = Body(
-        ...,
-        openapi_examples={
-            "deepseek_example": {
-                "summary": "配置 DeepSeek-Chat 模型",
-                "description": "使用 DeepSeek Chat 模型及 API Key 的示例",
-                "value": {
-                    "api_key": "your_key",
-                    "model": "deepseek-chat",
-                    "base_url": "https://api.deepseek.com/v1",
-                    "timeout": 180.0,
-                    "max_completion_tokens": 2048,
-                    "temperature": 0
-                },
-            }
-        },
-    )
-) -> dict:
+async def set_config(cfg: LLMSetting = Body(
+    ...,
+    openapi_examples={
+        "deepseek_example": {
+            "summary": "配置 DeepSeek-Chat 模型",
+            "description": "使用 DeepSeek Chat 模型及 API Key 的示例",
+            "value": {
+                "api_key": "your_key",
+                "model": "deepseek-chat",
+                "base_url": "https://api.deepseek.com/v1",
+                "timeout": 180.0,
+                "max_completion_tokens": 2048,
+                "temperature": 0
+            },
+        }
+    },
+)) -> dict:
     """
     设置 LLM 配置，并更新全局 llm_client 和 reward_service
     """
@@ -111,3 +107,22 @@ async def set_config(
         return {"message": "配置已更新", "config": new_cfg.model_dump()}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"更新配置失败: {e}")
+
+
+# ======================= Backward API ==========================
+class QAItem(BaseModel):
+    q: str
+    a: str
+
+
+class BackwardRequest(BaseModel):
+    qas: List[QAItem]
+
+
+
+
+@router.post("/backward")
+async def backward_api(req: BackwardRequest) -> dict:
+    service = BackwardService()
+    result = await service.backward([{"q": qa.q, "a": qa.a} for qa in req.qas])
+    return {"data": result}
