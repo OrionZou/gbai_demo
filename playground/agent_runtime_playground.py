@@ -203,13 +203,13 @@ with tabs[1]:
         else:
             # 动态添加候选答案
             if 'num_candidates' not in st.session_state:
-                st.session_state.num_candidates = 3
+                st.session_state.num_candidates = 1
 
             col_a, col_b = st.columns([1, 4])
             with col_a:
                 num_candidates = st.number_input(
                     "候选答案数量",
-                    min_value=2,
+                    min_value=1,
                     max_value=10,
                     value=st.session_state.num_candidates)
                 if num_candidates != st.session_state.num_candidates:
@@ -231,7 +231,7 @@ with tabs[1]:
             if not question.strip():
                 st.error("请输入问题")
             elif len(candidates) < 2:
-                st.error("请至少输入2个候选答案")
+                st.error("请至少输入1个候选答案")
             elif not target_answer.strip():
                 st.error("请输入目标答案")
             else:
@@ -505,10 +505,10 @@ with tabs[2]:
                 with st.expander("📋 OSPA 数据"):
                     ospa_df = pd.DataFrame([
                         {
-                            "observation": item.get("observation", ""),
-                            "state": item.get("state", ""),
-                            "problem": item.get("problem", ""),
-                            "action": item.get("action", "")
+                            "O": item.get("o", ""),
+                            "S": item.get("s", ""),
+                            "p": item.get("p", ""),
+                            "A": item.get("a", "")
                         } for item in result["ospa"][:10]  # 只显示前10条
                     ])
                     st.dataframe(ospa_df)

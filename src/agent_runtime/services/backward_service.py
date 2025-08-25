@@ -75,7 +75,7 @@ def chapter_to_ospa(chapter: ChapterGroup) -> List[OSPA]:
         >>> print(f"生成了 {len(ospa_list)} 个OSPA条目")
     """
     ospa_list = []
-    s_value = f"章节: {chapter.chapter_name}。聚合原因: {chapter.reason}"
+    s_value = f"{chapter.chapter_name}"
     p_value = chapter.prompt or f"回答时请限定在章节『{chapter.chapter_name}』的知识范围内。"
 
     for qa in chapter.qas:
