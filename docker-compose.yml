@@ -1,10 +1,23 @@
 version: '3.8'
 
 services:
-  weaviate:
-    image: semitechnologies/weaviate:1.32.2
+
+  nginx:
+    image: docker.1ms.run/nginx:latest
     ports:
-      - "8855:8080"
+      - "80:80"
+      - "443:443"              # 若使用自签或正式证书
+    volumes:
+      - ./reverse-proxy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./reverse-proxy/nginx/conf.d:/etc/nginx/conf.d:ro
+      # - ./reverse-proxy/certs:/etc/nginx/certs:ro  # 若你放置了证书
+    networks:
+      - proxy
+    restart: unless-stopped
+  weaviate:
+    image: docker.1ms.run/semitechnologies/weaviate:1.32.2
+    # ports:
+      # - "8855:8080"
     environment:
       - QUERY_DEFAULTS_LIMIT=25
       - AUTHENTICATION_APIKEY_ENABLED=true
@@ -17,13 +30,14 @@ services:
       - CLUSTER_HOSTNAME=node1
     volumes:
       - ./weaviate_db_data:/var/lib/weaviate
+    networks: [proxy]
     restart: on-failure:0
 
   neo4j:
-    image: neo4j:5.26.10
+    image: docker.1ms.run/neo4j:5.26.10
     ports:
-      - "7474:7474"
-      - "7687:7687"
+      - "7473:7474"
+      - "7686:7687"
     environment:
       - NEO4J_AUTH=neo4j/password
       - NEO4J_PLUGINS=["apoc"]
@@ -33,4 +47,9 @@ services:
       - ./neo4j_db_data/logs:/logs
       - ./neo4j_db_data/import:/var/lib/neo4j/import
       - ./neo4j_db_data/plugins:/plugins
+    networks: [proxy]
     restart: unless-stopped
+
+networks:
+  proxy:
+    driver: bridge

@@ -74,10 +74,10 @@ poetry install
 
 ```bash
 # 启动Weaviate和Neo4j服务
-docker-compose up -d
+docker compose up -d
 
 # 查看服务状态
-docker-compose ps
+docker compose ps
 ```
 
 服务启动后可访问：
