@@ -1,4 +1,5 @@
-from typing import List, Literal
+import json
+from typing import List, Literal, Any
 from pydantic import BaseModel, Field, ConfigDict
 from jinja2 import Template
 
@@ -8,6 +9,45 @@ from agent_runtime.logging.logger import logger
 
 Label = Literal["equivalent", "partially_equivalent", "different",
                 "unsupported"]
+
+
+def normalize_to_list(json_data: Any) -> List[Any]:
+    """把各种可能的 LLM 返回结构统一成 list。
+    规则：
+      1) str → 尝试 json 解析，否则返回 [str]
+      2) list → 原样返回
+      3) dict →
+         3.1 若含 'chapters' 且为 list，则返回该 list
+         3.2 若只有一个键且该值为 list，返回该 list
+         3.3 若有若干键，挑第一个值为 list 的返回
+         3.4 否则把整个 dict 包成单元素列表
+      4) None → []
+      5) 其他标量 → [value]
+    """
+    if json_data is None:
+        return []
+    if isinstance(json_data, str):
+        try:
+            parsed = json.loads(json_data)
+            return normalize_to_list(parsed)
+        except Exception:
+            return [json_data]
+    if isinstance(json_data, list):
+        return json_data
+    if isinstance(json_data, dict):
+        if isinstance(json_data.get("chapters"), list):
+            return json_data["chapters"]
+        if len(json_data) == 1:
+            sole_val = next(iter(json_data.values()))
+            if isinstance(sole_val, list):
+                return sole_val
+        # 选第一个值为 list 的键
+        for v in json_data.values():
+            if isinstance(v, list):
+                return v
+        return [json_data]
+    # 标量或其他对象
+    return [json_data]
 
 
 class PairwiseJudge(BaseModel):
@@ -86,11 +126,7 @@ class RewardService:
         logger.debug("LLM INPUT: {}", ctx.to_openai_format())
         json_data = await self.llm_client.structured_output_old(
             messages=ctx.to_openai_format())
-        json_list = []
-        if isinstance(json_data, dict):
-            json_list = list(json_data.values())[0]
-        elif isinstance(json_data, list):
-            json_list = json_data
+        json_list = normalize_to_list(json_data)
         logger.debug(f"json_list:{json_list}")
         results = []
         for data in json_list:
@@ -98,4 +134,3 @@ class RewardService:
         return RewardRusult(question=question,
                             target_answer=target_answer,
                             results=results)
-
