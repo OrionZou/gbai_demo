@@ -12,7 +12,7 @@ services:
       - ./reverse-proxy/nginx/conf.d:/etc/nginx/conf.d:ro
       # - ./reverse-proxy/certs:/etc/nginx/certs:ro  # 若你放置了证书
     networks:
-      - proxy
+      - gbai-net
     restart: unless-stopped
   weaviate:
     image: docker.1ms.run/semitechnologies/weaviate:1.32.2
@@ -30,7 +30,7 @@ services:
       - CLUSTER_HOSTNAME=node1
     volumes:
       - ./weaviate_db_data:/var/lib/weaviate
-    networks: [proxy]
+    networks: [gbai-net]
     restart: on-failure:0
 
   neo4j:
@@ -47,9 +47,9 @@ services:
       - ./neo4j_db_data/logs:/logs
       - ./neo4j_db_data/import:/var/lib/neo4j/import
       - ./neo4j_db_data/plugins:/plugins
-    networks: [proxy]
+    networks: [gbai-net]
     restart: unless-stopped
 
 networks:
-  proxy:
+  gbai-net:
     driver: bridge
