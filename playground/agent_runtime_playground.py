@@ -159,6 +159,7 @@ with tabs[1]:
     with col1:
         # 预设示例
         examples = {
+            "自定义输入": {},
             "简单示例 - 地理题": {
                 "question": "世界上最大的海洋是哪个？",
                 "candidates": ["大西洋", "太平洋", "印度洋", "北冰洋", "地中海"],
@@ -174,8 +175,7 @@ with tabs[1]:
                 ],
                 "target_answer":
                 "唐僧此次取经的真正目的，是为了弘扬佛法，普度众生。"
-            },
-            "自定义输入": {}
+            }
         }
 
         example_choice = st.selectbox("选择测试示例",
@@ -187,6 +187,10 @@ with tabs[1]:
         question = st.text_area("问题",
                                 value=example.get("question", ""),
                                 help="需要进行语义比较的问题")
+
+        target_answer = st.text_area("目标答案",
+                                     value=example.get("target_answer", ""),
+                                     help="用于比较的标准答案")
 
         # 候选答案输入
         st.subheader("候选答案")
@@ -221,10 +225,6 @@ with tabs[1]:
                                          key=f"custom_candidate_{i}")
                 if candidate.strip():
                     candidates.append(candidate.strip())
-
-        target_answer = st.text_area("目标答案",
-                                     value=example.get("target_answer", ""),
-                                     help="用于比较的标准答案")
 
         # 提交测试
         if st.button("🚀 执行 Reward 测试", type="primary", key="run_reward"):
@@ -309,6 +309,11 @@ with tabs[2]:
 
     # 预设示例
     backward_examples = {
+        "自定义输入": {
+            "qas": [],
+            "chapters_extra_instructions": "",
+            "gen_p_extra_instructions": ""
+        },
         "简单示例 - Python基础": {
             "qas": [{
                 "q": "Python如何定义变量？",
@@ -347,21 +352,17 @@ with tabs[2]:
             "gen_p_extra_instructions":
             "为每个技术领域生成专业、准确的技术文档风格提示词"
         },
-        "自定义输入": {
-            "qas": [],
-            "chapters_extra_instructions": "",
-            "gen_p_extra_instructions": ""
-        }
     }
-
-    backward_example_choice = st.selectbox("选择测试示例",
-                                           list(backward_examples.keys()),
-                                           key="backward_example")
-    backward_example = backward_examples[backward_example_choice]
 
     col1, col2 = st.columns([3, 2])
 
     with col1:
+
+        backward_example_choice = st.selectbox("选择测试示例",
+                                               list(backward_examples.keys()),
+                                               key="backward_example")
+        backward_example = backward_examples[backward_example_choice]
+
         st.subheader("📝 问答对输入")
 
         # CSV 文件上传
