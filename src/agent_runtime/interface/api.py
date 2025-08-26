@@ -11,6 +11,12 @@ from agent_runtime.services.backward_service import BackwardService, ChapterGrou
 router = APIRouter()
 
 
+@router.get("/health")
+async def health_check():
+    """健康检查端点"""
+    return {"status": "healthy", "service": "agent_runtime"}
+
+
 class RewardRequest(BaseModel):
     question: str
     candidates: List[str]

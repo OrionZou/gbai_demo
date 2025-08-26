@@ -1,0 +1,48 @@
+# Agent Runtime Service Dockerfile
+FROM docker.1ms.run/python:3.12
+
+# 设置工作目录
+WORKDIR /app
+
+# 设置环境变量
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+ENV POETRY_NO_INTERACTION=1
+ENV POETRY_VENV_IN_PROJECT=1
+ENV POETRY_CACHE_DIR=/tmp/poetry_cache
+
+# 安装系统依赖
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# 安装 Poetry
+RUN pip install poetry==1.7.1
+
+# 复制 Poetry 配置文件
+COPY pyproject.toml poetry.lock* ./
+COPY README.md README.md
+# 复制源代码
+COPY src/ ./src/
+COPY .env_example .env
+
+# 安装 Python 依赖
+RUN poetry config virtualenvs.create false \
+    && poetry install \
+    && rm -rf $POETRY_CACHE_DIR
+
+# 创建非 root 用户
+RUN useradd --create-home --shell /bin/bash app \
+    && chown -R app:app /app
+USER app
+
+# 暴露端口
+EXPOSE 8011
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8011/agent/health || exit 1
+
+# 启动命令
+CMD ["python", "-m", "uvicorn", "agent_runtime.main:app", "--host", "0.0.0.0", "--port", "8011"]

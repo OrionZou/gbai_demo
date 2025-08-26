@@ -1,6 +1,43 @@
 version: '3.8'
 
 services:
+  agent-runtime:
+    build:
+      context: .
+      dockerfile: dockerfiles/Dockerfile.agent_runtime
+    image: agent_runtime:latest 
+    ports:
+      - "8011:8011"
+    networks:
+      - gbai-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8011/agent/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  playground:
+    build:
+      context: .
+      dockerfile: dockerfiles/Dockerfile.playground
+    image: playground:latest 
+    ports:
+      - "8501:8501"
+    environment:
+      - AGENT_RUNTIME_API_URL=http://agent-runtime:8011
+    networks:
+      - gbai-net
+    depends_on:
+      - agent-runtime
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   nginx:
     image: docker.1ms.run/nginx:latest
