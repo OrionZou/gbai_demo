@@ -8,10 +8,11 @@ def create_app() -> FastAPI:
     """
     app = FastAPI(
         title="Agent Runtime API",
+        docs_url="/docs",
+        openapi_url="/openapi.json",
         description="Agent Runtime 提供的 API 接口服务",
         version="1.0.0",
     )
-
     # 挂载 reward API 路由
     app.include_router(reward_api.router, prefix="/agent")
 

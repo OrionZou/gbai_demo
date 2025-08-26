@@ -10,6 +10,8 @@ services:
       - "8011:8011"
     networks:
       - gbai-net
+    volumes:
+      - ./src:/app/src
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8011/agent/health"]
@@ -25,6 +27,8 @@ services:
     image: playground:latest 
     ports:
       - "8501:8501"
+    volumes:
+      - ./playground:/app/playground
     environment:
       - AGENT_RUNTIME_API_URL=http://agent-runtime:8011
     networks:
