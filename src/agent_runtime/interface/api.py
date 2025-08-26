@@ -1,6 +1,7 @@
-from typing import List, Dict
+import time
+from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, Body
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from agent_runtime.services.reward_service import RewardService, RewardRusult
 from agent_runtime.clients.llm.openai_client import LLM
@@ -14,6 +15,48 @@ class RewardRequest(BaseModel):
     question: str
     candidates: List[str]
     target_answer: str
+
+
+class LLMAskRequest(BaseModel):
+    """LLM Ask API 请求模型
+    
+    Attributes:
+        messages (List[Dict[str, Any]]): 消息列表，遵循 OpenAI 格式
+        stream (Optional[bool]): 是否启用流式输出，默认使用配置中的设置
+        temperature (Optional[float]): 生成温度，范围 0.0-2.0，默认使用配置中的设置
+    """
+    messages: List[Dict[str, Any]] = Field(
+        ...,
+        description="消息列表，每个消息包含 role 和 content 字段",
+        min_items=1
+    )
+    stream: Optional[bool] = Field(
+        None,
+        description="是否启用流式输出"
+    )
+    temperature: Optional[float] = Field(
+        None,
+        description="生成温度，控制输出的随机性",
+        ge=0.0,
+        le=2.0
+    )
+
+
+class LLMAskResponse(BaseModel):
+    """LLM Ask API 响应模型
+    
+    Attributes:
+        success (bool): 请求是否成功
+        message (str): 响应消息或错误信息
+        content (Optional[str]): LLM 生成的内容
+        model (str): 使用的模型名称
+        processing_time_ms (int): 处理耗时（毫秒）
+    """
+    success: bool
+    message: str
+    content: Optional[str] = None
+    model: str
+    processing_time_ms: int
 
 
 llm_client = LLM()
@@ -63,6 +106,154 @@ async def set_config(cfg: LLMSetting = Body(
         return {"message": "配置已更新", "config": new_cfg.model_dump()}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"更新配置失败: {e}")
+
+
+@router.post("/llm/ask", response_model=LLMAskResponse)
+async def llm_ask_api(request: LLMAskRequest = Body(
+    ...,
+    openapi_examples={
+        "simple_question": {
+            "summary": "简单问答示例",
+            "description": "一个简单的单轮对话示例",
+            "value": {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "什么是人工智能？"
+                    }
+                ],
+                "temperature": 0.7
+            }
+        },
+        "multi_turn_conversation": {
+            "summary": "多轮对话示例",
+            "description": "包含系统提示和多轮对话的示例",
+            "value": {
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "你是一个专业的Python编程助手。"
+                    },
+                    {
+                        "role": "user",
+                        "content": "如何在Python中创建一个列表？"
+                    },
+                    {
+                        "role": "assistant",
+                        "content": "在Python中，你可以用方括号[]创建列表，例如：my_list = [1, 2, 3]"
+                    },
+                    {
+                        "role": "user",
+                        "content": "如何向列表中添加元素？"
+                    }
+                ],
+                "temperature": 0.3,
+                "stream": False
+            }
+        },
+        "creative_writing": {
+            "summary": "创意写作示例",
+            "description": "使用较高温度进行创意写作的示例",
+            "value": {
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "你是一个创意写作助手，擅长编写有趣的故事。"
+                    },
+                    {
+                        "role": "user",
+                        "content": "请写一个关于机器人和人类友谊的短故事开头。"
+                    }
+                ],
+                "temperature": 1.2,
+                "stream": True
+            }
+        }
+    }
+)) -> LLMAskResponse:
+    """
+    LLM Ask API: 与语言模型进行对话
+    
+    这个API允许你与配置的语言模型进行对话，支持单轮和多轮对话。
+    
+    主要功能：
+    1. 单轮问答：发送单个问题获取回答
+    2. 多轮对话：维护对话历史进行连续交流
+    3. 系统提示：使用系统角色设定模型行为
+    4. 温度控制：调节回答的创造性和随机性
+    5. 流式输出：支持实时流式响应（可选）
+    
+    参数说明：
+    - messages: 遵循OpenAI格式的消息列表，每个消息包含role（系统/用户/助手）和content
+    - temperature: 0.0-2.0，数值越高输出越有创造性，越低越确定性
+    - stream: 是否启用流式输出
+    
+    适用场景：
+    - 问答系统
+    - 对话机器人
+    - 内容生成
+    - 代码助手
+    - 创意写作
+    
+    你可以在 FastAPI docs (/docs) 中选择示例请求体，快速测试不同场景。
+    
+    Returns:
+        LLMAskResponse: 包含生成内容和处理信息的响应
+        
+    Raises:
+        HTTPException: 当输入验证失败或LLM调用出错时
+    """
+    # 输入验证
+    if not request.messages:
+        raise HTTPException(status_code=400, detail="消息列表不能为空")
+    
+    if len(request.messages) > 50:  # 合理的消息数量限制
+        raise HTTPException(status_code=400, detail="消息数量不能超过50条")
+    
+    # 验证消息格式
+    for i, msg in enumerate(request.messages):
+        if not isinstance(msg, dict):
+            raise HTTPException(status_code=400, detail=f"第{i+1}条消息格式错误，应为字典")
+        
+        if "role" not in msg or "content" not in msg:
+            raise HTTPException(status_code=400, detail=f"第{i+1}条消息缺少必需字段 'role' 或 'content'")
+        
+        if msg["role"] not in ["system", "user", "assistant"]:
+            raise HTTPException(status_code=400, detail=f"第{i+1}条消息的role无效，应为 'system', 'user' 或 'assistant'")
+        
+        if not isinstance(msg["content"], str) or not msg["content"].strip():
+            raise HTTPException(status_code=400, detail=f"第{i+1}条消息的content不能为空")
+        
+        if len(msg["content"]) > 10000:  # 单条消息长度限制
+            raise HTTPException(status_code=400, detail=f"第{i+1}条消息内容长度不能超过10000字符")
+    
+    start_time = time.time()
+    
+    try:
+        # 调用LLM ask方法
+        content = await llm_client.ask(
+            messages=request.messages,
+            stream=request.stream,
+            temperature=request.temperature
+        )
+        
+        # 计算处理时间
+        processing_time_ms = int((time.time() - start_time) * 1000)
+        
+        return LLMAskResponse(
+            success=True,
+            message="LLM调用成功",
+            content=content,
+            model=llm_client.model,
+            processing_time_ms=processing_time_ms
+        )
+        
+    except ValueError as e:
+        processing_time_ms = int((time.time() - start_time) * 1000)
+        raise HTTPException(status_code=400, detail=f"输入参数错误: {str(e)}")
+    except Exception as e:
+        processing_time_ms = int((time.time() - start_time) * 1000)
+        raise HTTPException(status_code=500, detail=f"LLM调用失败: {str(e)}")
 
 
 @router.post("/reward")
