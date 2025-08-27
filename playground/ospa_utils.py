@@ -12,73 +12,63 @@ from ospa_models import OSPAItem, OSPAManager
 from api_services import ServiceManager, run_async_in_streamlit
 
 
+def _detect_encoding(raw: bytes, path: Path | None = None) -> str:
+    """优先用 charset-normalizer 探测；否则按常见编码回退。"""
+    if from_bytes and raw:
+        probe = from_bytes(raw).best()
+        if probe and probe.encoding:
+            return probe.encoding
+    if path and from_path:
+        probe = from_path(str(path)).best()
+        if probe and probe.encoding:
+            return probe.encoding
+
+    # 回退顺序：UTF-8 BOM → UTF-8 → GBK → GB18030 → Latin1
+    for enc in ("utf-8-sig", "utf-8", "gbk", "gb18030", "latin1"):
+        try:
+            raw.decode(enc)
+            return enc
+        except Exception:
+            pass
+    return "utf-8"
+
+
 class OSPADataLoader:
     """OSPA数据加载器"""
 
     @staticmethod
-    def load_from_csv_file(uploaded_file: Union[str, Path, IO[bytes]]) -> OSPAManager:
+    def load_from_csv_file(
+            uploaded_file: Union[str, Path, IO[bytes]]) -> OSPAManager:
         """
-        从上传的 CSV 文件加载数据（自动探测编码）。
-        支持:
-        - 文件路径 (str/Path)
-        - 二进制文件流 (e.g., FastAPI UploadFile.file / Flask/Django 上传对象)
+        自动探测 CSV 原始编码 → 统一转 UTF-8 后读取为 DataFrame。
+        支持文件路径(str/Path)与二进制文件流(如 FastAPI UploadFile.file)。
         """
-        tried_encodings = []  # 记录尝试过的编码，便于报错时提示
-
-        def _process_df_from_bytes(raw: bytes) -> pd.DataFrame:
-            # 1) 用 charset-normalizer 从字节流探测
-            probe = from_bytes(raw).best()
-            detected = (probe.encoding if probe else None) or "utf-8"
-            tried_encodings.append(f"detected:{detected}")
-
-            # 2) 先用探测到的编码尝试
-            try:
-                return pd.read_csv(io.BytesIO(raw), encoding=detected)
-            except Exception:
-                # 3) 常见中文/西文编码回退
-                fallbacks = ["utf-8-sig", "gbk", "gb18030", "latin1"]
-                for enc in fallbacks:
-                    if enc not in tried_encodings:
-                        try:
-                            tried_encodings.append(enc)
-                            return pd.read_csv(io.BytesIO(raw), encoding=enc)
-                        except Exception:
-                            continue
-                # 4) 最后再试一次严格 utf-8（便于给出更可读的错误）
-                tried_encodings.append("utf-8(strict)")
-                return pd.read_csv(io.BytesIO(raw), encoding="utf-8")
-
         try:
-            # 情况 A：文件流 / 二进制缓冲区
-            if hasattr(uploaded_file, "read"):
-                # 读取全部字节做检测；若是 FastAPI UploadFile，传入的是 .file 或整个对象
-                raw = uploaded_file.read() if hasattr(uploaded_file, "read") else uploaded_file.file.read()
-                # 读完后，光标在末尾；后续不要再对同一对象重复 read
-                df = _process_df_from_bytes(raw)
+            # 读取原始字节
+            if hasattr(uploaded_file, "read"):  # 文件流
+                raw = uploaded_file.read()  # 读全；后续勿重复 read
+                src_path = None
+            else:  # 路径
+                src_path = Path(uploaded_file)  # type: ignore[arg-type]
+                if not src_path.exists():
+                    raise FileNotFoundError(f"文件不存在: {src_path}")
+                raw = src_path.read_bytes()
 
-            # 情况 B：字符串/Path 路径
-            else:
-                path = Path(uploaded_file)
-                if not path.exists():
-                    raise FileNotFoundError(f"文件不存在: {path}")
+            # 探测编码
+            enc = _detect_encoding(raw, src_path)
 
-                # 优先用 from_path 探测编码
-                probe = from_path(str(path)).best()
-                detected = (probe.encoding if probe else None) or "utf-8"
-                tried_encodings.append(f"detected:{detected}")
+            # 统一转为 UTF-8 文本
+            text = raw.decode(enc, errors="strict")
+            text = text.replace("\r\n", "\n").replace("\r", "\n")  # 规范换行
 
-                try:
-                    df = pd.read_csv(path, encoding=detected)
-                except Exception:
-                    # 读原始字节再走统一回退逻辑，鲁棒一些
-                    raw = path.read_bytes()
-                    df = _process_df_from_bytes(raw)
+            # 以 UTF-8 读取
+            df = pd.read_csv(io.StringIO(text))
 
+            # 下游处理
             return OSPADataLoader._process_dataframe(df)
 
         except Exception as e:
-            tried = ", ".join(tried_encodings) if tried_encodings else "none"
-            raise Exception(f"CSV文件读取失败: {e}（已尝试编码: {tried}）")
+            raise Exception(f"CSV文件读取失败: {e}")
 
     @staticmethod
     def load_from_example_file(file_path: str) -> OSPAManager:
@@ -217,8 +207,8 @@ class OSPAProcessor:
                     confidence = result.data["results"][0]["confidence"]
                     consistency_str = (f"{consistency}"
                                        if consistency is not None else 'N/A')
-                    confidence_str = (f"{confidence}" if
-                                      confidence is not None else 'N/A')
+                    confidence_str = (f"{confidence}"
+                                      if confidence is not None else 'N/A')
                     manager.update_item_by_no(item_no,
                                               consistency=consistency_str,
                                               confidence_score=confidence_str,
@@ -276,13 +266,30 @@ class OSPAProcessor:
                 skipped_count = 0
 
                 for item in manager.items:
-                    # 寻找匹配的生成数据
+                    # 记录原始数据
+
+                    # 寻找匹配的生成数据 - 改进匹配逻辑
+                    matched = False
                     for gen_item in generated_ospa:
                         gen_o = gen_item.get('o', '').strip()
                         gen_a = gen_item.get('a', '').strip()
-                        if (gen_o == item.O.strip()
-                                and gen_a == item.A.strip()):
+                        item_o = item.O.strip()
+                        item_a = item.A.strip()
 
+                        # 尝试多种匹配方式
+                        exact_match = (gen_o == item_o and gen_a == item_a)
+                        normalized_match = (
+                            gen_o.replace('\n', ' ').replace('\r', ' ')
+                            == item_o.replace('\n', ' ').replace('\r', ' ')
+                            and gen_a.replace('\n', ' ').replace('\r', ' ')
+                            == item_a.replace('\n', ' ').replace('\r', ' '))
+                        contains_match = (
+                            gen_o in item_o or item_o in gen_o
+                            or gen_a in item_a or item_a in gen_a
+                        ) and len(gen_o) > 10 and len(gen_a) > 10  # 避免短文本误匹配
+
+                        if exact_match or normalized_match or contains_match:
+                            print(f"[DEBUG] Found match for item {item.no}: exact={exact_match}, normalized={normalized_match}, contains={contains_match}")
                             # 根据覆盖模式决定是否更新
                             if overwrite_mode == "覆盖所有字段":
                                 # 直接覆盖
@@ -305,6 +312,7 @@ class OSPAProcessor:
                                     updated_count += 1
                                 else:
                                     skipped_count += 1
+                            matched = True
                             break
 
                 return {
@@ -442,8 +450,8 @@ class StreamlitUtils:
 
         display_df = display_df[required_columns]
         display_df.columns = [
-            '序号', 'O', 'S', 'p', 'A', "A'", "consistency",
-            "confidence_score", "error"
+            '序号', 'O', 'S', 'p', 'A', "A'", "consistency", "confidence_score",
+            "error"
         ]
 
         # 使用可编辑的数据编辑器
@@ -452,45 +460,48 @@ class StreamlitUtils:
             use_container_width=True,
             num_rows="dynamic",
             column_config={
-                "序号": st.column_config.NumberColumn(
-                    "序号", width="small", disabled=True
-                ),
-                "O": st.column_config.TextColumn(
-                    "O", width="medium", help="观察/用户输入"
-                ),
-                "S": st.column_config.TextColumn(
-                    "S", width="small", help="状态/场景"
-                ),
-                "p": st.column_config.TextColumn(
-                    "p", width="large", help="提示词"
-                ),
-                "A": st.column_config.TextColumn(
-                    "A", width="medium", help="Agent输出/标准答案"
-                ),
-                "A'": st.column_config.TextColumn(
-                    "A'", width="medium", help="候选答案（用于一致性比较）"
-                ),
-                "consistency": st.column_config.NumberColumn(
-                    "consistency", width="small", help="一致性得分", format="%.3f"
-                ),
-                "confidence_score": st.column_config.NumberColumn(
-                    "confidence_score", width="small", help="置信度",
-                    format="%.3f"
-                ),
-                "error": st.column_config.TextColumn(
-                    "error", width="medium", help="错误信息"
-                ),
+                "序号":
+                st.column_config.NumberColumn("序号",
+                                              width="small",
+                                              disabled=True),
+                "O":
+                st.column_config.TextColumn("O",
+                                            width="medium",
+                                            help="观察/用户输入"),
+                "S":
+                st.column_config.TextColumn("S", width="small", help="状态/场景"),
+                "p":
+                st.column_config.TextColumn("p", width="large", help="提示词"),
+                "A":
+                st.column_config.TextColumn("A",
+                                            width="medium",
+                                            help="Agent输出/标准答案"),
+                "A'":
+                st.column_config.TextColumn("A'",
+                                            width="medium",
+                                            help="候选答案（用于一致性比较）"),
+                "consistency":
+                st.column_config.NumberColumn("consistency",
+                                              width="small",
+                                              help="一致性得分",
+                                              format="%.3f"),
+                "confidence_score":
+                st.column_config.NumberColumn("confidence_score",
+                                              width="small",
+                                              help="置信度",
+                                              format="%.3f"),
+                "error":
+                st.column_config.TextColumn("error",
+                                            width="medium",
+                                            help="错误信息"),
             },
-            key=key
-        )
+            key=key)
 
         return edited_df
 
     @staticmethod
-    def update_manager_from_edited_df(
-        manager: OSPAManager,
-        edited_df: pd.DataFrame
-    ) -> bool:
+    def update_manager_from_edited_df(manager: OSPAManager,
+                                      edited_df: pd.DataFrame) -> bool:
         """从编辑后的DataFrame更新管理器数据"""
         try:
             updated_items = []
@@ -522,11 +533,11 @@ class StreamlitUtils:
         with col1:
             st.metric("总数据", stats['total_items'])
         with col2:
-            st.metric("可检测一致性", stats['valid_for_reward'])
-        with col3:
             st.metric("可生成S&p", stats['valid_for_backward'])
-        with col4:
+        with col3:
             st.metric("可生成答案", stats['valid_for_llm'])
+        with col4:
+            st.metric("可检测一致性", stats['valid_for_reward'])
 
         if stats['has_errors'] > 0:
             st.warning(f"⚠️ 有 {stats['has_errors']} 条数据存在错误")

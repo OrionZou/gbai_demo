@@ -3,11 +3,12 @@
 使用模块化架构，重点优化OSPA表格功能
 """
 import os
+import copy
 import streamlit as st
 import requests
 import pandas as pd
 import time
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 # 导入新的模块
 from ospa_models import OSPAManager, OSPAItem
@@ -29,18 +30,18 @@ if 'processor' not in st.session_state:
     st.session_state.processor = None
 
 # API URL 配置
-api_url = st.text_input(
-    "Agent Runtime API URL",
-    value=os.getenv("AGENT_RUNTIME_API_URL", DEFAULT_API_URL),
-    key="api_url_input",
-    help="Agent Runtime API 的基础URL"
-)
+api_url = st.text_input("Agent Runtime API URL",
+                        value=os.getenv("AGENT_RUNTIME_API_URL",
+                                        DEFAULT_API_URL),
+                        key="api_url_input",
+                        help="Agent Runtime API 的基础URL")
 
 # 更新服务管理器
-if (st.session_state.service_manager is None or
-    st.session_state.service_manager.base_url != api_url):
+if (st.session_state.service_manager is None
+        or st.session_state.service_manager.base_url != api_url):
     st.session_state.service_manager = ServiceManager(api_url)
-    st.session_state.processor = OSPAProcessor(st.session_state.service_manager)
+    st.session_state.processor = OSPAProcessor(
+        st.session_state.service_manager)
 
 service_manager = st.session_state.service_manager
 processor = st.session_state.processor
@@ -56,6 +57,121 @@ with col1:
 with col2:
     if st.button("🔄 重新检查", help="重新检查 API 连接状态"):
         st.rerun()
+
+
+def _handle_data_loading(data_source: str,
+                         current_manager: OSPAManager) -> Optional[OSPAManager]:
+    """处理数据加载逻辑"""
+
+    if data_source == "上传 CSV 文件":
+        uploaded_file = st.file_uploader("选择 OSPA CSV 文件",
+                                         type=['csv'],
+                                         help="CSV文件应包含观察(O)和行动(A)等必要列")
+
+        if uploaded_file is not None:
+            # 生成文件的唯一标识符
+            file_info = {
+                'name': uploaded_file.name,
+                'size': uploaded_file.size,
+                'type': uploaded_file.type
+            }
+            
+            # 检查是否已经处理过相同的文件
+            if 'last_processed_file' not in st.session_state:
+                st.session_state.last_processed_file = None
+            
+            # 判断是否是新文件或文件已变更
+            is_new_file = (
+                st.session_state.last_processed_file is None or
+                st.session_state.last_processed_file != file_info
+            )
+            
+            if is_new_file:
+                try:
+                    new_manager = OSPADataLoader.load_from_csv_file(uploaded_file)
+                    st.success(f"✅ 成功加载 {len(new_manager.items)} 条 OSPA 数据")
+                    
+                    # 记录已处理的文件信息
+                    st.session_state.last_processed_file = file_info
+                    
+                    # 强制刷新以确保数据正确加载
+                    if "ospa_editor" in st.session_state:
+                        del st.session_state["ospa_editor"]
+                    return new_manager
+
+                except Exception as e:
+                    st.error(f"文件读取失败: {str(e)}")
+                    return None
+            else:
+                # 文件已经被处理过，显示提示信息
+                st.info(f"📁 文件 '{uploaded_file.name}' 已加载，"
+                        f"当前有 {len(current_manager.items)} 条数据")
+                return None
+
+    elif data_source == "使用示例数据":
+        # 使用示例数据
+        example_files = {
+            "示例1 (exp1.csv)": "ospa/exp1.csv",
+            "示例2 (exp2.csv)": "ospa/exp2.csv",
+            "示例3 (exp3.csv)": "ospa/exp3.csv"
+        }
+
+        selected_example = st.selectbox("选择示例文件", list(example_files.keys()))
+
+        if st.button("📥 加载示例数据", key="load_example"):
+            try:
+                example_file = example_files[selected_example]
+                new_manager = OSPADataLoader.load_from_example_file(
+                    example_file)
+                st.success(f"✅ 成功加载 {len(current_manager.items)} 条示例数据")
+
+                # 强制刷新以确保数据正确加载
+                if "ospa_editor" in st.session_state:
+                    del st.session_state["ospa_editor"]
+
+                return new_manager
+
+            except Exception as e:
+                st.error(f"示例数据加载失败: {str(e)}")
+                return None
+
+    elif data_source == "手动输入":
+        if 'manual_ospa_count' not in st.session_state:
+            st.session_state.manual_ospa_count = 3
+
+        num_entries = st.number_input("OSPA 条目数量",
+                                      min_value=1,
+                                      max_value=20,
+                                      value=st.session_state.manual_ospa_count,
+                                      key="manual_ospa_num")
+
+        if num_entries != st.session_state.manual_ospa_count:
+            st.session_state.manual_ospa_count = num_entries
+            st.rerun()
+
+        with st.form("manual_ospa_form"):
+            manual_items = []
+            for i in range(num_entries):
+                st.write(f"**OSPA 条目 {i+1}**")
+                o = st.text_area(f"O (观察/用户输入)", key=f"manual_o_{i}")
+                a = st.text_area(f"A (Agent输出)", key=f"manual_a_{i}")
+
+                if o.strip() and a.strip():
+                    manual_items.append(
+                        OSPAItem(no=i + 1, O=o.strip(), A=a.strip()))
+
+            if st.form_submit_button("💾 保存手动输入的数据", type="primary"):
+                current_manager.items = manual_items
+                st.success(f"✅ 成功保存 {len(manual_items)} 条 OSPA 数据")
+
+                # 强制刷新以确保数据正确加载
+                if "ospa_editor" in st.session_state:
+                    del st.session_state["ospa_editor"]
+
+                return current_manager
+
+    return None
+
 
 # 创建选项卡
 tabs = st.tabs(["⚙️ LLM配置", "🏆 Reward API", "↩️ Backward API", "📊 OSPA 表格"])
@@ -112,22 +228,24 @@ with tabs[0]:
         # 配置表单
         with st.form("config_form"):
             api_key = st.text_input("API Key",
-                                   value=template.get("api_key", ""),
-                                   type="password")
+                                    value=template.get("api_key", ""),
+                                    type="password")
             model = st.text_input("模型名称", value=template.get("model", ""))
             base_url = st.text_input("Base URL",
-                                    value=template.get("base_url", ""))
+                                     value=template.get("base_url", ""))
             timeout = st.number_input("超时时间 (秒)",
-                                     value=template.get("timeout", 120.0),
-                                     min_value=1.0)
+                                      value=template.get("timeout", 120.0),
+                                      min_value=1.0)
             max_tokens = st.number_input("最大令牌数",
-                                        value=template.get("max_completion_tokens", 2048),
-                                        min_value=1)
+                                         value=template.get(
+                                             "max_completion_tokens", 2048),
+                                         min_value=1)
             temperature = st.number_input("温度",
-                                         value=template.get("temperature", 0.0),
-                                         min_value=0.0,
-                                         max_value=2.0,
-                                         step=0.1)
+                                          value=template.get(
+                                              "temperature", 0.0),
+                                          min_value=0.0,
+                                          max_value=2.0,
+                                          step=0.1)
 
             if st.form_submit_button("💾 保存配置", type="primary"):
                 config_data = {
@@ -140,11 +258,13 @@ with tabs[0]:
                 }
 
                 try:
-                    result = service_manager.config_service.update_config(config_data)
+                    result = service_manager.config_service.update_config(
+                        config_data)
                     st.success("✅ 配置更新成功！")
                     st.json(result)
                     # 更新会话状态
-                    st.session_state.current_config = result.get("config", config_data)
+                    st.session_state.current_config = result.get(
+                        "config", config_data)
                 except Exception as e:
                     st.error(f"配置更新失败: {str(e)}")
 
@@ -166,31 +286,31 @@ with tabs[1]:
                 "target_answer": "太平洋"
             },
             "复杂示例 - 阅读理解": {
-                "question": "请总结《西游记》中唐僧西天取经的目的。",
+                "question":
+                "请总结《西游记》中唐僧西天取经的目的。",
                 "candidates": [
                     "唐僧带领孙悟空、猪八戒、沙僧历经九九八十一难前往西天取经，为了取得真经。",
-                    "唐僧此行是因为皇帝派遣他寻找宝物。",
-                    "取经的最终目的，是为了获取佛经，弘扬佛法，普度众生。",
-                    "唐僧和徒弟们一路降妖除魔，实际上是为了打败妖怪获得宝藏。",
-                    "这个故事主要讲述了团队合作、修行和坚持不懈的精神。"
+                    "唐僧此行是因为皇帝派遣他寻找宝物。", "取经的最终目的，是为了获取佛经，弘扬佛法，普度众生。",
+                    "唐僧和徒弟们一路降妖除魔，实际上是为了打败妖怪获得宝藏。", "这个故事主要讲述了团队合作、修行和坚持不懈的精神。"
                 ],
-                "target_answer": "唐僧此次取经的真正目的，是为了弘扬佛法，普度众生。"
+                "target_answer":
+                "唐僧此次取经的真正目的，是为了弘扬佛法，普度众生。"
             }
         }
 
         example_choice = st.selectbox("选择测试示例",
-                                     list(examples.keys()),
-                                     key="reward_example")
+                                      list(examples.keys()),
+                                      key="reward_example")
         example = examples[example_choice]
 
         # 输入表单
         question = st.text_area("问题",
-                               value=example.get("question", ""),
-                               help="需要进行语义比较的问题")
+                                value=example.get("question", ""),
+                                help="需要进行语义比较的问题")
 
         target_answer = st.text_area("目标答案",
-                                    value=example.get("target_answer", ""),
-                                    help="用于比较的标准答案")
+                                     value=example.get("target_answer", ""),
+                                     help="用于比较的标准答案")
 
         # 候选答案输入
         st.subheader("候选答案")
@@ -201,9 +321,9 @@ with tabs[1]:
             candidates = example["candidates"]
             for i, candidate in enumerate(candidates):
                 st.text_area(f"候选答案 {i+1}",
-                            value=candidate,
-                            disabled=True,
-                            key=f"candidate_{i}")
+                             value=candidate,
+                             disabled=True,
+                             key=f"candidate_{i}")
         else:
             # 动态添加候选答案
             if 'num_candidates' not in st.session_state:
@@ -222,7 +342,7 @@ with tabs[1]:
 
             for i in range(num_candidates):
                 candidate = st.text_area(f"候选答案 {i+1}",
-                                        key=f"custom_candidate_{i}")
+                                         key=f"custom_candidate_{i}")
                 if candidate.strip():
                     candidates.append(candidate.strip())
 
@@ -244,7 +364,7 @@ with tabs[1]:
                 try:
                     with st.spinner("正在执行语义一致性分析..."):
                         response = requests.post(f"{api_url}/agent/reward",
-                                               json=test_data)
+                                                 json=test_data)
 
                     if response.status_code == 200:
                         result = response.json()
@@ -254,12 +374,16 @@ with tabs[1]:
                         if 'reward_results' not in st.session_state:
                             st.session_state.reward_results = []
                         st.session_state.reward_results.append({
-                            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                            "question": question,
-                            "result": result
+                            "timestamp":
+                            time.strftime("%Y-%m-%d %H:%M:%S"),
+                            "question":
+                            question,
+                            "result":
+                            result
                         })
                     else:
-                        st.error(f"测试失败: {response.status_code} - {response.text}")
+                        st.error(
+                            f"测试失败: {response.status_code} - {response.text}")
                 except Exception as e:
                     st.error(f"请求失败: {e}")
 
@@ -277,12 +401,17 @@ with tabs[1]:
 
             # 历史记录
             if len(st.session_state.reward_results) > 1:
-                with st.expander(f"历史记录 ({len(st.session_state.reward_results)-1} 条)"):
-                    for i, result in enumerate(reversed(st.session_state.reward_results[:-1])):
+                with st.expander(
+                        f"历史记录 ({len(st.session_state.reward_results)-1} 条)"):
+                    for i, result in enumerate(
+                            reversed(st.session_state.reward_results[:-1])):
                         st.write(f"**{i+1}.** {result['timestamp']}")
                         st.write(f"问题: {result['question'][:30]}...")
-                        if st.button(f"查看",
-                                   key=f"view_result_{len(st.session_state.reward_results)-i-2}"):
+                        if st.button(
+                                f"查看",
+                                key=
+                                f"view_result_{len(st.session_state.reward_results)-i-2}"
+                        ):
                             st.json(result['result'])
 
             if st.button("🗑️ 清空历史", key="clear_reward_history"):
@@ -305,13 +434,20 @@ with tabs[2]:
             "gen_p_extra_instructions": ""
         },
         "简单示例 - Python基础": {
-            "qas": [
-                {"q": "Python如何定义变量？", "a": "在Python中使用赋值语句定义变量，如 x = 10"},
-                {"q": "Python如何定义函数？", "a": "使用def关键字定义函数，如 def func_name():"},
-                {"q": "什么是Python列表？", "a": "列表是Python中的可变序列，使用[]定义"}
-            ],
-            "chapters_extra_instructions": "请将Python相关的问题聚合到一个章节",
-            "gen_p_extra_instructions": "生成专业的Python技术文档风格提示词"
+            "qas": [{
+                "q": "Python如何定义变量？",
+                "a": "在Python中使用赋值语句定义变量，如 x = 10"
+            }, {
+                "q": "Python如何定义函数？",
+                "a": "使用def关键字定义函数，如 def func_name():"
+            }, {
+                "q": "什么是Python列表？",
+                "a": "列表是Python中的可变序列，使用[]定义"
+            }],
+            "chapters_extra_instructions":
+            "请将Python相关的问题聚合到一个章节",
+            "gen_p_extra_instructions":
+            "生成专业的Python技术文档风格提示词"
         }
     }
 
@@ -319,16 +455,16 @@ with tabs[2]:
 
     with col1:
         backward_example_choice = st.selectbox("选择测试示例",
-                                              list(backward_examples.keys()),
-                                              key="backward_example")
+                                               list(backward_examples.keys()),
+                                               key="backward_example")
         backward_example = backward_examples[backward_example_choice]
 
         st.subheader("📝 问答对输入")
 
         # CSV 文件上传
         uploaded_file = st.file_uploader("上传CSV文件 (可选)",
-                                        type=['csv'],
-                                        help="CSV文件应包含 'q' 和 'a' 列")
+                                         type=['csv'],
+                                         help="CSV文件应包含 'q' 和 'a' 列")
 
         qas = []
 
@@ -336,9 +472,11 @@ with tabs[2]:
             try:
                 df = pd.read_csv(uploaded_file)
                 if 'q' in df.columns and 'a' in df.columns:
-                    qas = [{"q": row['q'], "a": row['a']}
-                          for _, row in df.iterrows()
-                          if pd.notna(row['q']) and pd.notna(row['a'])]
+                    qas = [{
+                        "q": row['q'],
+                        "a": row['a']
+                    } for _, row in df.iterrows()
+                           if pd.notna(row['q']) and pd.notna(row['a'])]
                     st.success(f"✅ 成功从CSV加载 {len(qas)} 个问答对")
                     st.dataframe(df[['q', 'a']].head(10))
                 else:
@@ -364,9 +502,9 @@ with tabs[2]:
                     st.session_state.num_qas = 3
 
                 num_qas = st.number_input("问答对数量",
-                                         min_value=1,
-                                         max_value=20,
-                                         value=st.session_state.num_qas)
+                                          min_value=1,
+                                          max_value=20,
+                                          value=st.session_state.num_qas)
                 if num_qas != st.session_state.num_qas:
                     st.session_state.num_qas = num_qas
                     st.rerun()
@@ -385,10 +523,11 @@ with tabs[2]:
             value=backward_example.get("chapters_extra_instructions", ""),
             help="指导如何聚合问答对到章节的额外说明")
 
-        gen_p_extra_instructions = st.text_area(
-            "2. 提示词生成额外指令(选填)",
-            value=backward_example.get("gen_p_extra_instructions", ""),
-            help="指导如何生成提示词的额外说明")
+        gen_p_extra_instructions = st.text_area("2. 提示词生成额外指令(选填)",
+                                                value=backward_example.get(
+                                                    "gen_p_extra_instructions",
+                                                    ""),
+                                                help="指导如何生成提示词的额外说明")
 
         # 提交测试
         if st.button("🚀 执行 Backward 处理", type="primary", key="run_backward"):
@@ -398,7 +537,8 @@ with tabs[2]:
                 try:
                     with st.spinner("正在执行问答对聚合处理..."):
                         result = service_manager.backward_service.process_qas(
-                            qas, chapters_extra_instructions, gen_p_extra_instructions)
+                            qas, chapters_extra_instructions,
+                            gen_p_extra_instructions)
 
                     st.success("✅ 处理完成！")
                     # 保存结果
@@ -463,86 +603,22 @@ with tabs[3]:
     with col1:
         st.subheader("📁 数据加载")
 
-        # 选择数据源
-        data_source = st.radio("数据源选择", ["上传 CSV 文件", "使用示例数据", "手动输入"],
-                               key="ospa_data_source")
+        col_data_source, col_statistics = st.columns([1, 3])
+        with col_data_source:
+            # 选择数据源
+            data_source = st.radio("数据源选择", ["上传 CSV 文件", "使用示例数据", "手动输入"],
+                                   key="ospa_data_source")
+        with col_statistics:
+            # 显示数据统计
+            StreamlitUtils.show_statistics(ospa_manager)
 
-        if data_source == "上传 CSV 文件":
-            uploaded_file = st.file_uploader("选择 OSPA CSV 文件",
-                                             type=['csv'],
-                                             help="CSV文件应包含观察(O)和行动(A)等必要列")
-
-            if uploaded_file is not None:
-                try:
-                    new_manager = OSPADataLoader.load_from_csv_file(
-                        uploaded_file)
-                    st.session_state.ospa_manager = new_manager
-                    ospa_manager = new_manager
-
-                    st.success(f"✅ 成功加载 {len(ospa_manager.items)} 条 OSPA 数据")
-
-                    # 显示数据统计
-                    StreamlitUtils.show_statistics(ospa_manager)
-
-                except Exception as e:
-                    st.error(f"文件读取失败: {str(e)}")
-
-        elif data_source == "使用示例数据":
-            # 使用示例数据
-            example_files = {
-                "示例1 (exp1.csv)": "ospa/exp1.csv",
-                "示例2 (exp2.csv)": "ospa/exp2.csv",
-                "示例3 (exp3.csv)": "ospa/exp3.csv"
-            }
-
-            selected_example = st.selectbox("选择示例文件",
-                                            list(example_files.keys()))
-
-            if st.button("📥 加载示例数据", key="load_example"):
-                try:
-                    example_file = example_files[selected_example]
-                    new_manager = OSPADataLoader.load_from_example_file(
-                        example_file)
-                    st.session_state.ospa_manager = new_manager
-                    ospa_manager = new_manager
-
-                    st.success(f"✅ 成功加载 {len(ospa_manager.items)} 条示例数据")
-
-                    # 显示数据统计
-                    StreamlitUtils.show_statistics(ospa_manager)
-
-                except Exception as e:
-                    st.error(f"示例数据加载失败: {str(e)}")
-
-        elif data_source == "手动输入":
-            if 'manual_ospa_count' not in st.session_state:
-                st.session_state.manual_ospa_count = 3
-
-            num_entries = st.number_input(
-                "OSPA 条目数量",
-                min_value=1,
-                max_value=20,
-                value=st.session_state.manual_ospa_count,
-                key="manual_ospa_num")
-
-            if num_entries != st.session_state.manual_ospa_count:
-                st.session_state.manual_ospa_count = num_entries
-                st.rerun()
-
-            with st.form("manual_ospa_form"):
-                manual_items = []
-                for i in range(num_entries):
-                    st.write(f"**OSPA 条目 {i+1}**")
-                    o = st.text_area(f"O (观察/用户输入)", key=f"manual_o_{i}")
-                    a = st.text_area(f"A (Agent输出)", key=f"manual_a_{i}")
-
-                    if o.strip() and a.strip():
-                        manual_items.append(
-                            OSPAItem(no=i + 1, O=o.strip(), A=a.strip()))
-
-                if st.form_submit_button("💾 保存手动输入的数据", type="primary"):
-                    ospa_manager.items = manual_items
-                    st.success(f"✅ 成功保存 {len(manual_items)} 条 OSPA 数据")
+        # 数据加载处理
+        new_manager = _handle_data_loading(data_source, ospa_manager)
+        if new_manager:
+            ospa_manager = st.session_state.ospa_manager = copy.deepcopy(
+                new_manager)
+            new_manager = None
+            st.rerun()
 
         # 显示和编辑当前数据
         if ospa_manager.items:
@@ -552,9 +628,9 @@ with tabs[3]:
                 st.subheader("📋 当前 OSPA 数据表格")
             with col_update:
                 if st.button("🔄 更新数据",
-                           type="primary",
-                           help="保存表格编辑的内容并刷新显示",
-                           key="update_ospa_table"):
+                             type="primary",
+                             help="保存表格编辑的内容并刷新显示",
+                             key="update_ospa_table"):
                     st.rerun()
 
             # 显示可编辑表格
@@ -629,9 +705,11 @@ with tabs[3]:
                             st.success(
                                 f"✅ 成功生成状态和提示词！更新了 {result['updated_count']} 条"
                             )
-                        
+
                         # 保存结果到会话状态
                         st.session_state.backward_generation_result = result
+                        # 强制刷新页面以显示更新的表格数据
+                        st.rerun()
                     else:
                         st.error(f"❌ {result['error']}")
                         st.session_state.backward_generation_result = result
@@ -640,8 +718,9 @@ with tabs[3]:
                 if st.button("🔄 清空状态提示词", type="secondary"):
                     ospa_manager.clear_field('S')
                     ospa_manager.clear_field('p')
+                    st.rerun()
                     st.success("✅ 已清空所有状态和提示词")
-            
+
             # 显示状态提示词生成结果
             if 'backward_generation_result' in st.session_state:
                 with st.expander("📄 状态提示词生成结果", expanded=False):
@@ -663,9 +742,9 @@ with tabs[3]:
                     step=0.1,
                     help="控制生成答案的创造性，0.0最确定，2.0最有创造性")
                 answer_generation_mode = st.radio("A'字段更新模式",
-                                                 ["只更新空白字段", "覆盖所有字段"],
-                                                 index=0,
-                                                 help="选择如何处理已有的A'字段数据")
+                                                  ["只更新空白字段", "覆盖所有字段"],
+                                                  index=0,
+                                                  help="选择如何处理已有的A'字段数据")
                 llm_enable_concurrent = st.checkbox(
                     "启用并发处理", value=True, key="llm_concurrent_enabled")
                 llm_max_concurrent = st.selectbox("并发请求数", [1, 3, 5, 8, 10],
@@ -699,9 +778,11 @@ with tabs[3]:
                             st.success(
                                 f"✅ 完成答案生成！成功生成: {result['success_count']} 条答案"
                             )
-                        
+
                         # 保存结果到会话状态
                         st.session_state.answer_generation_result = result
+                        # 清除表格编辑器的状态缓存，强制重新渲染
+                        st.rerun()
                     else:
                         st.error(f"❌ {result['error']}")
                         st.session_state.answer_generation_result = result
@@ -709,8 +790,9 @@ with tabs[3]:
             with col_f:
                 if st.button("🔄 清空生成答案", type="secondary"):
                     ospa_manager.clear_field('A_prime')
+                    st.rerun()
                     st.success("✅ 已清空所有生成的答案")
-            
+
             # 显示智能答案生成结果
             if 'answer_generation_result' in st.session_state:
                 with st.expander("🤖 智能答案生成结果", expanded=False):
@@ -753,10 +835,9 @@ with tabs[3]:
                         st.success(
                             f"✅ 完成一致性检测！成功: {result['success_count']}/{result['processed_count']} 条"
                         )
-                        
+
                         # 保存结果到会话状态
                         st.session_state.consistency_check_result = result
-                        
                         # 强制刷新页面以显示更新的表格数据
                         st.rerun()
                     else:
@@ -768,8 +849,9 @@ with tabs[3]:
                     ospa_manager.clear_field('consistency')
                     ospa_manager.clear_field('confidence_score')
                     ospa_manager.clear_field('error')
+                    st.rerun()
                     st.success("✅ 已清空所有一致性检测结果")
-            
+
             # 显示一致性检测结果
             if 'consistency_check_result' in st.session_state:
                 with st.expander("🏆 一致性检测结果", expanded=False):
