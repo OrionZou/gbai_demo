@@ -19,7 +19,7 @@ RUN apt update \
     && rm -rf /var/lib/apt/lists/*
 
 # 安装 Poetry
-RUN pip install poetry==1.8.5 
+RUN pip install --no-cache-dir poetry==1.8.5 
 
 # 复制 Poetry 配置文件
 COPY pyproject.toml poetry.lock* ./
