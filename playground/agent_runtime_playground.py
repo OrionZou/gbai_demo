@@ -59,8 +59,9 @@ with col2:
         st.rerun()
 
 
-def _handle_data_loading(data_source: str,
-                         current_manager: OSPAManager) -> Optional[OSPAManager]:
+def _handle_data_loading(
+        data_source: str,
+        current_manager: OSPAManager) -> Optional[OSPAManager]:
     """处理数据加载逻辑"""
 
     if data_source == "上传 CSV 文件":
@@ -75,25 +76,24 @@ def _handle_data_loading(data_source: str,
                 'size': uploaded_file.size,
                 'type': uploaded_file.type
             }
-            
+
             # 检查是否已经处理过相同的文件
             if 'last_processed_file' not in st.session_state:
                 st.session_state.last_processed_file = None
-            
+
             # 判断是否是新文件或文件已变更
-            is_new_file = (
-                st.session_state.last_processed_file is None or
-                st.session_state.last_processed_file != file_info
-            )
-            
+            is_new_file = (st.session_state.last_processed_file is None or
+                           st.session_state.last_processed_file != file_info)
+
             if is_new_file:
                 try:
-                    new_manager = OSPADataLoader.load_from_csv_file(uploaded_file)
+                    new_manager = OSPADataLoader.load_from_csv_file(
+                        uploaded_file)
                     st.success(f"✅ 成功加载 {len(new_manager.items)} 条 OSPA 数据")
-                    
+
                     # 记录已处理的文件信息
                     st.session_state.last_processed_file = file_info
-                    
+
                     # 强制刷新以确保数据正确加载
                     if "ospa_editor" in st.session_state:
                         del st.session_state["ospa_editor"]
