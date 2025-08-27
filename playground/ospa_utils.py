@@ -2,9 +2,12 @@
 OSPA相关工具函数
 提供数据处理、验证和转换功能
 """
+import io
 import pandas as pd
 import streamlit as st
-from typing import List, Dict, Any, Callable, Optional
+from pathlib import Path
+from charset_normalizer import from_path, from_bytes
+from typing import List, Dict, Any, Callable, Optional, Union, IO
 from ospa_models import OSPAItem, OSPAManager
 from api_services import ServiceManager, run_async_in_streamlit
 
@@ -13,13 +16,69 @@ class OSPADataLoader:
     """OSPA数据加载器"""
 
     @staticmethod
-    def load_from_csv_file(uploaded_file) -> OSPAManager:
-        """从上传的CSV文件加载数据"""
+    def load_from_csv_file(uploaded_file: Union[str, Path, IO[bytes]]) -> OSPAManager:
+        """
+        从上传的 CSV 文件加载数据（自动探测编码）。
+        支持:
+        - 文件路径 (str/Path)
+        - 二进制文件流 (e.g., FastAPI UploadFile.file / Flask/Django 上传对象)
+        """
+        tried_encodings = []  # 记录尝试过的编码，便于报错时提示
+
+        def _process_df_from_bytes(raw: bytes) -> pd.DataFrame:
+            # 1) 用 charset-normalizer 从字节流探测
+            probe = from_bytes(raw).best()
+            detected = (probe.encoding if probe else None) or "utf-8"
+            tried_encodings.append(f"detected:{detected}")
+
+            # 2) 先用探测到的编码尝试
+            try:
+                return pd.read_csv(io.BytesIO(raw), encoding=detected)
+            except Exception:
+                # 3) 常见中文/西文编码回退
+                fallbacks = ["utf-8-sig", "gbk", "gb18030", "latin1"]
+                for enc in fallbacks:
+                    if enc not in tried_encodings:
+                        try:
+                            tried_encodings.append(enc)
+                            return pd.read_csv(io.BytesIO(raw), encoding=enc)
+                        except Exception:
+                            continue
+                # 4) 最后再试一次严格 utf-8（便于给出更可读的错误）
+                tried_encodings.append("utf-8(strict)")
+                return pd.read_csv(io.BytesIO(raw), encoding="utf-8")
+
         try:
-            df = pd.read_csv(uploaded_file)
+            # 情况 A：文件流 / 二进制缓冲区
+            if hasattr(uploaded_file, "read"):
+                # 读取全部字节做检测；若是 FastAPI UploadFile，传入的是 .file 或整个对象
+                raw = uploaded_file.read() if hasattr(uploaded_file, "read") else uploaded_file.file.read()
+                # 读完后，光标在末尾；后续不要再对同一对象重复 read
+                df = _process_df_from_bytes(raw)
+
+            # 情况 B：字符串/Path 路径
+            else:
+                path = Path(uploaded_file)
+                if not path.exists():
+                    raise FileNotFoundError(f"文件不存在: {path}")
+
+                # 优先用 from_path 探测编码
+                probe = from_path(str(path)).best()
+                detected = (probe.encoding if probe else None) or "utf-8"
+                tried_encodings.append(f"detected:{detected}")
+
+                try:
+                    df = pd.read_csv(path, encoding=detected)
+                except Exception:
+                    # 读原始字节再走统一回退逻辑，鲁棒一些
+                    raw = path.read_bytes()
+                    df = _process_df_from_bytes(raw)
+
             return OSPADataLoader._process_dataframe(df)
+
         except Exception as e:
-            raise Exception(f"CSV文件读取失败: {str(e)}")
+            tried = ", ".join(tried_encodings) if tried_encodings else "none"
+            raise Exception(f"CSV文件读取失败: {e}（已尝试编码: {tried}）")
 
     @staticmethod
     def load_from_example_file(file_path: str) -> OSPAManager:
@@ -57,15 +116,15 @@ class OSPADataLoader:
 
             # 只添加有效的O和A数据
             o_val = (str(row.get(o_col, ''))
-                    if pd.notna(row.get(o_col, '')) else '')
+                     if pd.notna(row.get(o_col, '')) else '')
             a_val = (str(row.get(a_col, ''))
-                    if pd.notna(row.get(a_col, '')) else '')
+                     if pd.notna(row.get(a_col, '')) else '')
 
             if o_val and a_val:
-                s_val = (str(row.get(s_col, ''))
-                        if pd.notna(row.get(s_col, '')) else '')
-                p_val = (str(row.get(p_col, ''))
-                        if pd.notna(row.get(p_col, '')) else '')
+                s_val = (str(row.get(s_col, '')) if pd.notna(row.get(
+                    s_col, '')) else '')
+                p_val = (str(row.get(p_col, '')) if pd.notna(row.get(
+                    p_col, '')) else '')
 
                 item_data = {
                     'no': idx + 1,
@@ -90,11 +149,15 @@ class OSPADataLoader:
 
         for col in columns:
             col_lower = col.lower().strip()
-            if col_lower in ['o', 'observation', 'user input', 'user_input',
-                            'question', 'q']:
+            if col_lower in [
+                    'o', 'observation', 'user input', 'user_input', 'question',
+                    'q'
+            ]:
                 mapping['O'] = col
-            elif col_lower in ['a', 'action', 'agent output', 'agent_output',
-                              'answer', 'response']:
+            elif col_lower in [
+                    'a', 'action', 'agent output', 'agent_output', 'answer',
+                    'response'
+            ]:
                 mapping['A'] = col
             elif col_lower in ['s', 'state', 'scenario', 'status']:
                 mapping['S'] = col
