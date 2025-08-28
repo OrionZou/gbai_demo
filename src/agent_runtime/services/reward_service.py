@@ -4,50 +4,12 @@ from pydantic import BaseModel, Field, ConfigDict
 from jinja2 import Template
 
 from agent_runtime.clients.llm.openai_client import LLM
+from agent_runtime.clients.utils import normalize_to_list
 from agent_runtime.data_format.context_ai import AIContext
 from agent_runtime.logging.logger import logger
 
 Label = Literal["equivalent", "partially_equivalent", "different",
                 "unsupported"]
-
-
-def normalize_to_list(json_data: Any) -> List[Any]:
-    """把各种可能的 LLM 返回结构统一成 list。
-    规则：
-      1) str → 尝试 json 解析，否则返回 [str]
-      2) list → 原样返回
-      3) dict →
-         3.1 若含 'chapters' 且为 list，则返回该 list
-         3.2 若只有一个键且该值为 list，返回该 list
-         3.3 若有若干键，挑第一个值为 list 的返回
-         3.4 否则把整个 dict 包成单元素列表
-      4) None → []
-      5) 其他标量 → [value]
-    """
-    if json_data is None:
-        return []
-    if isinstance(json_data, str):
-        try:
-            parsed = json.loads(json_data)
-            return normalize_to_list(parsed)
-        except Exception:
-            return [json_data]
-    if isinstance(json_data, list):
-        return json_data
-    if isinstance(json_data, dict):
-        if isinstance(json_data.get("chapters"), list):
-            return json_data["chapters"]
-        if len(json_data) == 1:
-            sole_val = next(iter(json_data.values()))
-            if isinstance(sole_val, list):
-                return sole_val
-        # 选第一个值为 list 的键
-        for v in json_data.values():
-            if isinstance(v, list):
-                return v
-        return [json_data]
-    # 标量或其他对象
-    return [json_data]
 
 
 class PairwiseJudge(BaseModel):
@@ -102,13 +64,33 @@ USER_PROMPT_TEMPLATE = """
 {% endfor %}
 ]
 """
-user_template = Template(USER_PROMPT_TEMPLATE)
 
 
 class RewardService:
 
     def __init__(self, llm_client: LLM):
         self.llm_client = llm_client
+        self.system_prompt = SYSTEM_PROMPT
+        self.user_prompt_template = USER_PROMPT_TEMPLATE
+        self.user_template = Template(USER_PROMPT_TEMPLATE)
+        logger.info(f"user_template:{self.user_template.module.__dict__}")
+
+    def update_prompts(self, system_prompt: str = None, user_prompt_template: str = None):
+        """
+        更新系统提示词和用户提示词模板
+        
+        Args:
+            system_prompt: 新的系统提示词，如果为None则不更新
+            user_prompt_template: 新的用户提示词模板，如果为None则不更新
+        """
+        if system_prompt is not None:
+            self.system_prompt = system_prompt
+            logger.info("System prompt updated")
+        
+        if user_prompt_template is not None:
+            self.user_prompt_template = user_prompt_template
+            self.user_template = Template(user_prompt_template)
+            logger.info("User prompt template updated")
 
     async def compare_answer(self, question: str, candidates: List[str],
                              target_answer: str) -> RewardRusult:
@@ -118,10 +100,10 @@ class RewardService:
         """
         ctx = AIContext()
 
-        ctx.add_system_prompt(SYSTEM_PROMPT)
-        rendered_prompt = user_template.render(question=question,
-                                               target=target_answer,
-                                               candidates=candidates)
+        ctx.add_system_prompt(self.system_prompt)
+        rendered_prompt = self.user_template.render(question=question,
+                                                    target=target_answer,
+                                                    candidates=candidates)
         ctx.add_user_prompt(rendered_prompt)
         logger.debug("LLM INPUT: {}", ctx.to_openai_format())
         json_data = await self.llm_client.structured_output_old(

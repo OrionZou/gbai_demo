@@ -37,17 +37,15 @@ class OSPAItem:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'OSPAItem':
         """从字典创建实例"""
-        return cls(
-            no=int(data.get('no', 0)),
-            O=str(data.get('O', '')),
-            S=str(data.get('S', '')),
-            p=str(data.get('p', '')),
-            A=str(data.get('A', '')),
-            A_prime=str(data.get('A_prime', '')),
-            consistency=str(data.get('consistency', '')),
-            confidence_score=str(data.get('confidence_score', '')),
-            error=str(data.get('error', ''))
-        )
+        return cls(no=int(data.get('no', 0)),
+                   O=str(data.get('O', '')),
+                   S=str(data.get('S', '')),
+                   p=str(data.get('p', '')),
+                   A=str(data.get('A', '')),
+                   A_prime=str(data.get('A_prime', '')),
+                   consistency=str(data.get('consistency', '')),
+                   confidence_score=str(data.get('confidence_score', '')),
+                   error=str(data.get('error', '')))
 
     def is_valid_for_reward(self) -> bool:
         """检查是否可以进行一致性检测"""
@@ -95,8 +93,9 @@ class OSPAManager:
 
     def get_valid_items_for_llm(self) -> List[OSPAItem]:
         """获取可以进行LLM生成的数据项"""
-        return [item for item in self.items
-                if item.is_valid_for_llm_generation()]
+        return [
+            item for item in self.items if item.is_valid_for_llm_generation()
+        ]
 
     def update_item_by_no(self, no: int, **kwargs: Any) -> bool:
         """根据序号更新数据项"""
@@ -118,8 +117,9 @@ class OSPAManager:
         """转换为DataFrame"""
         return pd.DataFrame(self.to_list())
 
-    def load_from_csv(self, file_path: str,
-                     column_mapping: Optional[Dict[str, str]] = None) -> int:
+    def load_from_csv(self,
+                      file_path: str,
+                      column_mapping: Optional[Dict[str, str]] = None) -> int:
         """从CSV文件加载数据"""
         try:
             df = pd.read_csv(file_path)
@@ -136,15 +136,28 @@ class OSPAManager:
                 a_col = column_mapping.get('A', '')
 
                 item_data = {
-                    'no': idx + 1,
-                    'O': str(row.get(o_col, '')) if pd.notna(row.get(o_col, '')) else '',
-                    'S': str(row.get(s_col, '')) if pd.notna(row.get(s_col, '')) else '',
-                    'p': str(row.get(p_col, '')) if pd.notna(row.get(p_col, '')) else '',
-                    'A': str(row.get(a_col, '')) if pd.notna(row.get(a_col, '')) else '',
-                    'A_prime': '',
-                    'consistency': '',
-                    'confidence_score': '',
-                    'error': ''
+                    'no':
+                    idx + 1,
+                    'O':
+                    str(row.get(o_col, ''))
+                    if pd.notna(row.get(o_col, '')) else '',
+                    'S':
+                    str(row.get(s_col, ''))
+                    if pd.notna(row.get(s_col, '')) else '',
+                    'p':
+                    str(row.get(p_col, ''))
+                    if pd.notna(row.get(p_col, '')) else '',
+                    'A':
+                    str(row.get(a_col, ''))
+                    if pd.notna(row.get(a_col, '')) else '',
+                    'A_prime':
+                    '',
+                    'consistency':
+                    '',
+                    'confidence_score':
+                    '',
+                    'error':
+                    ''
                 }
                 self.items.append(OSPAItem.from_dict(item_data))
 
@@ -158,11 +171,15 @@ class OSPAManager:
 
         for col in columns:
             col_lower = col.lower().strip()
-            if col_lower in ['o', 'observation', 'user input', 'user_input',
-                           'question', 'q']:
+            if col_lower in [
+                    'o', 'observation', 'user input', 'user_input', 'question',
+                    'q'
+            ]:
                 mapping['O'] = col
-            elif col_lower in ['a', 'action', 'agent output', 'agent_output',
-                             'answer', 'response']:
+            elif col_lower in [
+                    'a', 'action', 'agent output', 'agent_output', 'answer',
+                    'response'
+            ]:
                 mapping['A'] = col
             elif col_lower in ['s', 'state', 'scenario', 'status']:
                 mapping['S'] = col
@@ -174,13 +191,20 @@ class OSPAManager:
     def get_statistics(self) -> Dict[str, int]:
         """获取数据统计信息"""
         return {
-            'total_items': len(self.items),
-            'valid_for_reward': len(self.get_valid_items_for_reward()),
-            'valid_for_backward': len(self.get_valid_items_for_backward()),
-            'valid_for_llm': len(self.get_valid_items_for_llm()),
-            'has_consistency': sum(1 for item in self.items
-                                 if item.consistency.strip()),
-            'has_s_field': sum(1 for item in self.items if item.S.strip()),
-            'has_p_field': sum(1 for item in self.items if item.p.strip()),
-            'has_errors': sum(1 for item in self.items if item.error.strip())
+            'total_items':
+            len(self.items),
+            'valid_for_reward':
+            len(self.get_valid_items_for_reward()),
+            'valid_for_backward':
+            len(self.get_valid_items_for_backward()),
+            'valid_for_llm':
+            len(self.get_valid_items_for_llm()),
+            'has_consistency':
+            sum(1 for item in self.items if item.consistency.strip()),
+            'has_s_field':
+            sum(1 for item in self.items if item.S.strip()),
+            'has_p_field':
+            sum(1 for item in self.items if item.p.strip()),
+            'has_errors':
+            sum(1 for item in self.items if item.error.strip())
         }

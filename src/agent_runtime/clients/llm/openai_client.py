@@ -6,46 +6,12 @@ from openai import AsyncOpenAI, AuthenticationError, OpenAIError
 from tenacity import retry, stop_after_attempt, wait_random_exponential
 
 from agent_runtime.config.loader import LLMSetting
-from agent_runtime.clients.llm.base import SingletonBase
+# from agent_runtime.clients.llm.base import SingletonBase
+from agent_runtime.clients.utils import fix_json
+
 from agent_runtime.logging.logger import logger
 
 ToolChoiceLiteral = Literal["none", "auto", "required"]
-
-
-def fix_json(json_str: str):
-    """
-    修复 JSON 字符串，主要应对缺少 list 开头 [ { 的情况。
-    """
-    s = json_str.strip()
-    try:
-        return json.loads(s)
-    except json.JSONDecodeError:
-        # 尝试补齐
-        fixed = s
-
-        # 如果不是以 '[' 开头，说明可能缺 [
-        if not fixed.startswith("["):
-            if fixed.startswith("{"):
-                fixed = "[" + fixed  # 补 [
-            else:
-                # 有时可能直接是 key:value，没有 {，这里不做复杂修复
-                fixed = "[{" + fixed
-
-        # 如果不是以 ']' 结尾，补 ]
-        if not fixed.endswith("]"):
-            # 如果末尾是 '}', 那么直接补 ]
-            if fixed.endswith("}"):
-                fixed = fixed + "]"
-            # 如果末尾是 '},' 之类，去掉逗号再补 ]
-            elif fixed.endswith("},"):
-                fixed = fixed[:-1] + "]"
-            else:
-                fixed = fixed + "]"
-
-        try:
-            return json.loads(fixed)
-        except json.JSONDecodeError as e:
-            raise ValueError(f"修复失败: {e}\n修复后字符串为:\n{fixed}")
 
 
 class LLM():
@@ -242,8 +208,6 @@ class LLM():
             message = rsp.choices[0].message
             if not message or not message.content:
                 raise ValueError("Empty response content from LLM")
-
-            logger.debug(f"test:{message.content}")
             parsed: Any = fix_json(message.content)
             if not isinstance(parsed, dict) and not isinstance(parsed, list):
                 raise ValueError("Response is not a valid JSON object")

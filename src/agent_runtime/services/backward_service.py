@@ -5,9 +5,9 @@ from typing import List, Dict, Any, Tuple, Optional
 from pydantic import BaseModel, Field, ConfigDict
 
 from agent_runtime.clients.llm.openai_client import LLM
+from agent_runtime.clients.utils import normalize_to_list
 from agent_runtime.data_format.context_ai import AIContext
 from agent_runtime.logging.logger import logger
-
 
 # -----------------------------
 # 数据模型
@@ -190,57 +190,6 @@ GEN_P_USER_TEMPLATE_ZH = """
 """
 
 gen_p_user_template = Template(GEN_P_USER_TEMPLATE_ZH)
-
-
-# -----------------------------
-# 工具函数
-# -----------------------------
-def normalize_to_list(json_data: Any) -> List[Any]:
-    """将各种可能的 LLM 返回结构统一转换成列表格式
-    
-    这个函数处理 LLM 可能返回的各种数据格式，确保返回统一的列表结构。
-    
-    Args:
-        json_data (Any): LLM 返回的原始数据
-        
-    Returns:
-        List[Any]: 标准化后的列表
-        
-    规则：
-      1) str → 尝试 json 解析，否则返回 [str]
-      2) list → 原样返回
-      3) dict →
-         3.1 若含 'chapters' 且为 list，则返回该 list
-         3.2 若只有一个键且该值为 list，返回该 list
-         3.3 若有若干键，挑第一个值为 list 的返回
-         3.4 否则把整个 dict 包成单元素列表
-      4) None → []
-      5) 其他标量 → [value]
-    """
-    if json_data is None:
-        return []
-    if isinstance(json_data, str):
-        try:
-            parsed = json.loads(json_data)
-            return normalize_to_list(parsed)
-        except Exception:
-            return [json_data]
-    if isinstance(json_data, list):
-        return json_data
-    if isinstance(json_data, dict):
-        if isinstance(json_data.get("chapters"), list):
-            return json_data["chapters"]
-        if len(json_data) == 1:
-            sole_val = next(iter(json_data.values()))
-            if isinstance(sole_val, list):
-                return sole_val
-        # 选第一个值为 list 的键
-        for v in json_data.values():
-            if isinstance(v, list):
-                return v
-        return [json_data]
-    # 标量或其他对象
-    return [json_data]
 
 
 # -----------------------------
