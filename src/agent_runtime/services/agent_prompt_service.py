@@ -5,7 +5,6 @@ Agent Prompt Management Service
 """
 
 from typing import Dict, List, Optional, Type, Any
-from enum import Enum
 from pydantic import BaseModel, Field, ConfigDict
 
 from agent_runtime.clients.llm.openai_client import LLM
@@ -14,20 +13,11 @@ from agent_runtime.agents.reward_agent import RewardAgent
 from agent_runtime.logging.logger import logger
 
 
-class AgentType(str, Enum):
-    """支持的Agent类型"""
-    REWARD_AGENT = "reward_agent"
-    # 可以在这里添加更多Agent类型
-    # CHAT_AGENT = "chat_agent"
-    # TASK_AGENT = "task_agent"
-
-
 class AgentPromptInfo(BaseModel):
     """Agent提示词信息"""
     model_config = ConfigDict(extra="forbid", strict=True)
 
     agent_name: str = Field(..., description="Agent名称")
-    agent_type: str = Field(..., description="Agent类型")
     system_prompt: str = Field(..., description="系统提示词")
     user_prompt_template: str = Field(..., description="用户提示词模板")
     template_variables: List[str] = Field(
@@ -53,12 +43,12 @@ class AgentPromptUpdate(BaseModel):
 class AgentPromptService:
     """Agent提示词管理服务"""
 
-    # Agent类型到类的映射
-    AGENT_CLASSES: Dict[AgentType, Type[BaseAgent]] = {
-        AgentType.REWARD_AGENT: RewardAgent,
+    # Agent名称到类的映射
+    AGENT_CLASSES: Dict[str, Type[BaseAgent]] = {
+        "reward_agent": RewardAgent,
         # 可以在这里添加更多Agent映射
-        # AgentType.CHAT_AGENT: ChatAgent,
-        # AgentType.TASK_AGENT: TaskAgent,
+        # "chat_agent": ChatAgent,
+        # "task_agent": TaskAgent,
     }
 
     def __init__(self, llm_client: LLM):
@@ -69,49 +59,50 @@ class AgentPromptService:
             llm_client: LLM客户端
         """
         self.llm_client = llm_client
-        self._agent_instances: Dict[str, BaseAgent] = {}
         logger.info("AgentPromptService initialized")
 
-    def _get_or_create_agent(self, agent_type: AgentType) -> BaseAgent:
+    def _get_or_create_agent(self, agent_name: str) -> BaseAgent:
         """
-        获取或创建Agent实例
+        获取或创建Agent实例（利用单例模式）
 
         Args:
-            agent_type: Agent类型
+            agent_name: Agent名称
 
         Returns:
             Agent实例
         """
-        if agent_type not in self._agent_instances:
-            agent_class = self.AGENT_CLASSES[agent_type]
-            # RewardAgent doesn't need agent_name as it's set in its __init__
-            self._agent_instances[agent_type] = agent_class(
-                llm_engine=self.llm_client
-            )
-            logger.debug(f"Created new agent instance: {agent_type}")
+        if agent_name not in self.AGENT_CLASSES:
+            raise ValueError(f"Unsupported agent: {agent_name}")
+            
+        agent_class = self.AGENT_CLASSES[agent_name]
+        # 利用BaseAgent的单例模式，相同agent_name会返回同一实例
+        agent = agent_class(
+            agent_name=agent_name,
+            llm_engine=self.llm_client
+        )
+        logger.debug(f"Got or created agent instance: {agent_name}")
+        return agent
 
-        return self._agent_instances[agent_type]
-
-    def get_supported_agent_types(self) -> List[str]:
+    def get_supported_agent_names(self) -> List[str]:
         """
-        获取支持的Agent类型列表
+        获取支持的Agent名称列表
 
         Returns:
-            支持的Agent类型列表
+            支持的Agent名称列表
         """
-        return [agent_type.value for agent_type in AgentType]
+        return list(self.AGENT_CLASSES.keys())
 
-    def get_agent_prompt_info(self, agent_type: AgentType) -> AgentPromptInfo:
+    def get_agent_prompt_info(self, agent_name: str) -> AgentPromptInfo:
         """
         获取指定Agent的提示词信息
 
         Args:
-            agent_type: Agent类型
+            agent_name: Agent名称
 
         Returns:
             Agent提示词信息
         """
-        agent = self._get_or_create_agent(agent_type)
+        agent = self._get_or_create_agent(agent_name)
 
         # 获取模板变量
         template_vars = list(agent.user_template_vars) if hasattr(
@@ -120,7 +111,6 @@ class AgentPromptService:
 
         return AgentPromptInfo(
             agent_name=agent.agent_name,
-            agent_type=agent_type.value,
             system_prompt=agent.system_prompt,
             user_prompt_template=agent.user_prompt_template,
             template_variables=template_vars
@@ -131,31 +121,31 @@ class AgentPromptService:
         获取所有支持的Agent的提示词信息
 
         Returns:
-            所有Agent的提示词信息字典，key为agent_type
+            所有Agent的提示词信息字典，key为agent_name
         """
         result = {}
-        for agent_type in AgentType:
-            result[agent_type.value] = self.get_agent_prompt_info(agent_type)
+        for agent_name in self.AGENT_CLASSES.keys():
+            result[agent_name] = self.get_agent_prompt_info(agent_name)
 
         logger.info(f"Retrieved prompt info for {len(result)} agents")
         return result
 
     def update_agent_prompts(
         self,
-        agent_type: AgentType,
+        agent_name: str,
         update_request: AgentPromptUpdate
     ) -> AgentPromptInfo:
         """
         更新指定Agent的提示词
 
         Args:
-            agent_type: Agent类型
+            agent_name: Agent名称
             update_request: 更新请求
 
         Returns:
             更新后的Agent提示词信息
         """
-        agent = self._get_or_create_agent(agent_type)
+        agent = self._get_or_create_agent(agent_name)
 
         updated_fields = []
 
@@ -170,71 +160,50 @@ class AgentPromptService:
             updated_fields.append("user_prompt_template")
 
         logger.info(
-            f"Updated {agent_type.value} prompts. Fields: {updated_fields}"
+            f"Updated {agent_name} prompts. Fields: {updated_fields}"
         )
 
         # 返回更新后的信息
-        return self.get_agent_prompt_info(agent_type)
+        return self.get_agent_prompt_info(agent_name)
 
-    def update_multiple_agents_prompts(
-        self,
-        updates: Dict[AgentType, AgentPromptUpdate]
-    ) -> Dict[str, AgentPromptInfo]:
-        """
-        批量更新多个Agent的提示词
 
-        Args:
-            updates: Agent类型到更新请求的映射
-
-        Returns:
-            更新后的所有Agent提示词信息
-        """
-        result = {}
-
-        for agent_type, update_request in updates.items():
-            result[agent_type.value] = self.update_agent_prompts(
-                agent_type,
-                update_request
-            )
-
-        logger.info(f"Batch updated prompts for {len(updates)} agents")
-        return result
-
-    def reset_agent_to_default(self, agent_type: AgentType) -> AgentPromptInfo:
+    def reset_agent_to_default(self, agent_name: str) -> AgentPromptInfo:
         """
         重置指定Agent的提示词为默认值
 
         Args:
-            agent_type: Agent类型
+            agent_name: Agent名称
 
         Returns:
             重置后的Agent提示词信息
         """
-        # 删除现有实例，下次获取时会创建新的默认实例
-        if agent_type in self._agent_instances:
-            del self._agent_instances[agent_type]
+        # 从单例缓存中移除实例，下次获取时会创建新的默认实例
+        if agent_name in BaseAgent._instances:
+            del BaseAgent._instances[agent_name]
+        if agent_name in BaseAgent._initialized:
+            BaseAgent._initialized.remove(agent_name)
 
-        logger.info(f"Reset {agent_type.value} prompts to default")
+        logger.info(f"Reset {agent_name} prompts to default")
 
         # 返回默认的Agent信息
-        return self.get_agent_prompt_info(agent_type)
+        return self.get_agent_prompt_info(agent_name)
 
     def validate_template_variables(
         self,
-        agent_type: AgentType,
+        agent_name: str,
         test_variables: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
         验证模板变量是否有效
 
         Args:
-            agent_type: Agent类型
+            agent_name: Agent名称
             test_variables: 测试变量
 
         Returns:
             验证结果，包含是否有效和错误信息
         """
-        agent = self._get_or_create_agent(agent_type)
+        agent = self._get_or_create_agent(agent_name)
 
         result = {
             "valid": False,
@@ -266,7 +235,7 @@ class AgentPromptService:
         except Exception as e:
             result["error"] = str(e)
             logger.error(
-                f"Template validation failed for {agent_type.value}: {e}"
+                f"Template validation failed for {agent_name}: {e}"
             )
 
         return result

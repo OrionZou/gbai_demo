@@ -883,28 +883,28 @@ with tabs[4]:
     # 页面标题和简洁说明
     st.markdown("## 🤖 Agent 提示词管理")
 
-    # 获取支持的Agent类型（自动加载）
-    if 'agent_types' not in st.session_state:
+    # 获取支持的Agent名称（自动加载）
+    if 'agent_names' not in st.session_state:
         try:
-            response = requests.get(f"{api_url}/agents/types")
+            response = requests.get(f"{api_url}/agents/names")
             if response.status_code == 200:
-                agent_types = response.json()
-                st.session_state.agent_types = agent_types
+                agent_names = response.json()
+                st.session_state.agent_names = agent_names
             else:
-                st.error(f"🚫 获取Agent类型失败: {response.status_code}")
-                st.session_state.agent_types = []
+                st.error(f"🚫 获取Agent名称失败: {response.status_code}")
+                st.session_state.agent_names = []
         except Exception as e:
             st.error(f"🚫 请求失败: {e}")
-            st.session_state.agent_types = []
+            st.session_state.agent_names = []
 
     # 紧凑的Agent选择区域
-    if st.session_state.agent_types:
+    if st.session_state.agent_names:
         col_select, col_info = st.columns([2, 3])
 
         with col_select:
             selected_agent = st.selectbox("🎯 选择Agent",
-                                          st.session_state.agent_types,
-                                          key="selected_agent_type",
+                                          st.session_state.agent_names,
+                                          key="selected_agent_name",
                                           help="选择后自动加载提示词")
 
         with col_info:
@@ -921,7 +921,7 @@ with tabs[4]:
                     # 只在Agent变更时更新信息，避免重复请求
                     if ('current_agent_info' not in st.session_state
                             or st.session_state.current_agent_info.get(
-                                'agent_type') != selected_agent):
+                                'agent_name') != selected_agent):
                         st.session_state.current_agent_info = agent_info
                         st.session_state.original_system_prompt = agent_info.get(
                             'system_prompt', '')
@@ -1417,7 +1417,7 @@ with tabs[4]:
                 if template_vars and 'validation_result' not in st.session_state:
                     st.info("💡 左侧已自动填入测试值，点击'验证'按钮开始测试")
     else:
-        st.error("无法获取Agent类型列表，请检查API连接")
+        st.error("无法获取Agent名称列表，请检查API连接")
 
 
 # 底部信息

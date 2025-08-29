@@ -8,7 +8,7 @@ from agent_runtime.clients.llm.openai_client import LLM
 from agent_runtime.config.loader import SettingLoader, LLMSetting
 from agent_runtime.services.backward_service import BackwardService, ChapterGroup, OSPA
 from agent_runtime.services.agent_prompt_service import (
-    AgentPromptService, AgentPromptInfo, AgentPromptUpdate, AgentType
+    AgentPromptService, AgentPromptInfo, AgentPromptUpdate
 )
 
 router = APIRouter()
@@ -494,52 +494,52 @@ async def backward_api(req: BackwardRequest = Body(
 
 
 
-@router.get("/agents/types")
-async def get_supported_agent_types() -> List[str]:
+@router.get("/agents/names")
+async def get_supported_agent_names() -> List[str]:
     """
-    获取所有支持的Agent类型
+    获取所有支持的Agent名称
     
     Returns:
-        List[str]: 支持的Agent类型列表
+        List[str]: 支持的Agent名称列表
     """
     try:
-        return agent_prompt_service.get_supported_agent_types()
+        return agent_prompt_service.get_supported_agent_names()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"获取Agent类型失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取Agent名称失败: {e}")
 
 
 
 
-@router.get("/agents/{agent_type}/prompts")
-async def get_agent_prompts(agent_type: str) -> AgentPromptInfo:
+@router.get("/agents/{agent_name}/prompts")
+async def get_agent_prompts(agent_name: str) -> AgentPromptInfo:
     """
     获取指定Agent的提示词信息
     
     Args:
-        agent_type: Agent类型
+        agent_name: Agent名称
         
     Returns:
         AgentPromptInfo: Agent提示词信息
     """
     try:
-        # 验证agent_type是否有效
-        if agent_type not in [t.value for t in AgentType]:
+        # 验证agent_name是否有效
+        supported_agents = agent_prompt_service.get_supported_agent_names()
+        if agent_name not in supported_agents:
             raise HTTPException(
                 status_code=400,
-                detail=f"无效的Agent类型: {agent_type}，支持的类型: {[t.value for t in AgentType]}"
+                detail=f"无效的Agent名称: {agent_name}，支持的名称: {supported_agents}"
             )
         
-        agent_type_enum = AgentType(agent_type)
-        return agent_prompt_service.get_agent_prompt_info(agent_type_enum)
+        return agent_prompt_service.get_agent_prompt_info(agent_name)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取Agent提示词失败: {e}")
 
 
-@router.put("/agents/{agent_type}/prompts")
+@router.put("/agents/{agent_name}/prompts")
 async def update_agent_prompts(
-    agent_type: str,
+    agent_name: str,
     request: AgentPromptUpdate = Body(
         ...,
         openapi_examples={
@@ -572,22 +572,22 @@ async def update_agent_prompts(
     更新指定Agent的提示词
     
     Args:
-        agent_type: Agent类型
+        agent_name: Agent名称
         request: 更新请求
         
     Returns:
         AgentPromptInfo: 更新后的Agent提示词信息
     """
     try:
-        # 验证agent_type是否有效
-        if agent_type not in [t.value for t in AgentType]:
+        # 验证agent_name是否有效
+        supported_agents = agent_prompt_service.get_supported_agent_names()
+        if agent_name not in supported_agents:
             raise HTTPException(
                 status_code=400,
-                detail=f"无效的Agent类型: {agent_type}，支持的类型: {[t.value for t in AgentType]}"
+                detail=f"无效的Agent名称: {agent_name}，支持的名称: {supported_agents}"
             )
         
-        agent_type_enum = AgentType(agent_type)
-        return agent_prompt_service.update_agent_prompts(agent_type_enum, request)
+        return agent_prompt_service.update_agent_prompts(agent_name, request)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -596,36 +596,36 @@ async def update_agent_prompts(
 
 
 
-@router.post("/agents/{agent_type}/prompts/reset")
-async def reset_agent_prompts(agent_type: str) -> AgentPromptInfo:
+@router.post("/agents/{agent_name}/prompts/reset")
+async def reset_agent_prompts(agent_name: str) -> AgentPromptInfo:
     """
     重置指定Agent的提示词为默认值
     
     Args:
-        agent_type: Agent类型
+        agent_name: Agent名称
         
     Returns:
         AgentPromptInfo: 重置后的Agent提示词信息
     """
     try:
-        # 验证agent_type是否有效
-        if agent_type not in [t.value for t in AgentType]:
+        # 验证agent_name是否有效
+        supported_agents = agent_prompt_service.get_supported_agent_names()
+        if agent_name not in supported_agents:
             raise HTTPException(
                 status_code=400,
-                detail=f"无效的Agent类型: {agent_type}，支持的类型: {[t.value for t in AgentType]}"
+                detail=f"无效的Agent名称: {agent_name}，支持的名称: {supported_agents}"
             )
         
-        agent_type_enum = AgentType(agent_type)
-        return agent_prompt_service.reset_agent_to_default(agent_type_enum)
+        return agent_prompt_service.reset_agent_to_default(agent_name)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"重置Agent提示词失败: {e}")
 
 
-@router.post("/agents/{agent_type}/prompts/validate")
+@router.post("/agents/{agent_name}/prompts/validate")
 async def validate_agent_template_variables(
-    agent_type: str,
+    agent_name: str,
     request: Dict[str, Any] = Body(
         ...,
         openapi_examples={
@@ -645,22 +645,22 @@ async def validate_agent_template_variables(
     验证Agent模板变量是否有效
     
     Args:
-        agent_type: Agent类型
+        agent_name: Agent名称
         request: 测试变量字典
         
     Returns:
         Dict[str, Any]: 验证结果，包含是否有效、缺失变量、多余变量和渲染预览
     """
     try:
-        # 验证agent_type是否有效
-        if agent_type not in [t.value for t in AgentType]:
+        # 验证agent_name是否有效
+        supported_agents = agent_prompt_service.get_supported_agent_names()
+        if agent_name not in supported_agents:
             raise HTTPException(
                 status_code=400,
-                detail=f"无效的Agent类型: {agent_type}，支持的类型: {[t.value for t in AgentType]}"
+                detail=f"无效的Agent名称: {agent_name}，支持的名称: {supported_agents}"
             )
         
-        agent_type_enum = AgentType(agent_type)
-        return agent_prompt_service.validate_template_variables(agent_type_enum, request)
+        return agent_prompt_service.validate_template_variables(agent_name, request)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:

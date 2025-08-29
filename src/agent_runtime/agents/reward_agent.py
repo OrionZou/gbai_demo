@@ -18,6 +18,9 @@ class RewardAgent(BaseAgent):
     答案一致性评审Agent
     仅重构step方法，其他业务逻辑保留在RewardService中
     """
+    
+    # 默认agent名称
+    DEFAULT_AGENT_NAME = "reward_agent"
 
     # 默认系统提示词
     DEFAULT_SYSTEM_PROMPT = """
@@ -62,6 +65,7 @@ class RewardAgent(BaseAgent):
     def __init__(
         self,
         llm_engine: LLM,
+        agent_name: Optional[str] = None,
         system_prompt: Optional[str] = None,
         user_prompt_template: Optional[str] = None,
     ):
@@ -70,11 +74,12 @@ class RewardAgent(BaseAgent):
 
         Args:
             llm_engine: LLM客户端引擎
+            agent_name: agent名称，如果不提供则使用默认值"reward_agent"
             system_prompt: 自定义系统提示词，如果不提供则使用默认值
             user_prompt_template: 自定义用户提示词模板，如果不提供则使用默认值
         """
         super().__init__(
-            agent_name="reward_agent",
+            agent_name=agent_name,
             llm_engine=llm_engine,
             system_prompt=system_prompt or self.DEFAULT_SYSTEM_PROMPT,
             user_prompt_template=user_prompt_template or self.DEFAULT_USER_TEMPLATE,
