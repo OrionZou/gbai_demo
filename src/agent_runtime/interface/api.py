@@ -7,6 +7,9 @@ from agent_runtime.services.reward_service import RewardService, RewardRusult
 from agent_runtime.clients.llm.openai_client import LLM
 from agent_runtime.config.loader import SettingLoader, LLMSetting
 from agent_runtime.services.backward_service import BackwardService, ChapterGroup, OSPA
+from agent_runtime.services.agent_prompt_service import (
+    AgentPromptService, AgentPromptInfo, AgentPromptUpdate, AgentType
+)
 
 router = APIRouter()
 
@@ -68,6 +71,7 @@ class LLMAskResponse(BaseModel):
 llm_client = LLM()
 reward_service = RewardService(llm_client)
 backward_service = BackwardService(llm_client)
+agent_prompt_service = AgentPromptService(llm_client)
 
 
 @router.get("/config")
@@ -104,11 +108,12 @@ async def set_config(cfg: LLMSetting = Body(
     try:
         new_cfg = SettingLoader.set_llm_setting(
             cfg.model_dump(exclude_none=True))
-        global llm_client, reward_service, backward_service
+        global llm_client, reward_service, backward_service, agent_prompt_service
         # 重新构建 LLM 客户端 (简化为使用默认构造函数，内部读取新的 SettingLoader 配置)
         llm_client = LLM(llm_setting=new_cfg)
         reward_service = RewardService(llm_client)
         backward_service = BackwardService(llm_client)
+        agent_prompt_service = AgentPromptService(llm_client)
         return {"message": "配置已更新", "config": new_cfg.model_dump()}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"更新配置失败: {e}")
@@ -479,3 +484,184 @@ async def backward_api(req: BackwardRequest = Body(
         raise HTTPException(status_code=400, detail=f"输入数据格式错误: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"反向知识处理失败: {str(e)}")
+
+
+# ======================= Agent Prompt Management APIs ==========================
+
+
+
+
+
+
+
+@router.get("/agents/types")
+async def get_supported_agent_types() -> List[str]:
+    """
+    获取所有支持的Agent类型
+    
+    Returns:
+        List[str]: 支持的Agent类型列表
+    """
+    try:
+        return agent_prompt_service.get_supported_agent_types()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取Agent类型失败: {e}")
+
+
+
+
+@router.get("/agents/{agent_type}/prompts")
+async def get_agent_prompts(agent_type: str) -> AgentPromptInfo:
+    """
+    获取指定Agent的提示词信息
+    
+    Args:
+        agent_type: Agent类型
+        
+    Returns:
+        AgentPromptInfo: Agent提示词信息
+    """
+    try:
+        # 验证agent_type是否有效
+        if agent_type not in [t.value for t in AgentType]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"无效的Agent类型: {agent_type}，支持的类型: {[t.value for t in AgentType]}"
+            )
+        
+        agent_type_enum = AgentType(agent_type)
+        return agent_prompt_service.get_agent_prompt_info(agent_type_enum)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取Agent提示词失败: {e}")
+
+
+@router.put("/agents/{agent_type}/prompts")
+async def update_agent_prompts(
+    agent_type: str,
+    request: AgentPromptUpdate = Body(
+        ...,
+        openapi_examples={
+            "update_system_prompt": {
+                "summary": "更新系统提示词",
+                "description": "只更新RewardAgent的系统提示词",
+                "value": {
+                    "system_prompt": "你是改进版的答案一致性评审器，请更仔细地分析每个候选答案的语义匹配度。"
+                }
+            },
+            "update_user_template": {
+                "summary": "更新用户模板",
+                "description": "只更新RewardAgent的用户提示词模板",
+                "value": {
+                    "user_prompt_template": "问题：{{ question }}\n\n目标答案：{{ target_answer }}\n\n请分析以下候选答案：\n{% for ans in candidates %}- {{ ans }}\n{% endfor %}"
+                }
+            },
+            "update_both": {
+                "summary": "同时更新系统提示词和用户模板",
+                "description": "同时更新RewardAgent的系统提示词和用户模板",
+                "value": {
+                    "system_prompt": "你是专业的答案评审器，需要判断候选答案与目标答案的一致性。",
+                    "user_prompt_template": "评审任务：\n问题：{{ question }}\n目标答案：{{ target_answer }}\n候选答案：\n{% for ans in candidates %}{{ loop.index }}. {{ ans }}\n{% endfor %}\n\n请给出评审结果。"
+                }
+            }
+        }
+    )
+) -> AgentPromptInfo:
+    """
+    更新指定Agent的提示词
+    
+    Args:
+        agent_type: Agent类型
+        request: 更新请求
+        
+    Returns:
+        AgentPromptInfo: 更新后的Agent提示词信息
+    """
+    try:
+        # 验证agent_type是否有效
+        if agent_type not in [t.value for t in AgentType]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"无效的Agent类型: {agent_type}，支持的类型: {[t.value for t in AgentType]}"
+            )
+        
+        agent_type_enum = AgentType(agent_type)
+        return agent_prompt_service.update_agent_prompts(agent_type_enum, request)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"更新Agent提示词失败: {e}")
+
+
+
+
+@router.post("/agents/{agent_type}/prompts/reset")
+async def reset_agent_prompts(agent_type: str) -> AgentPromptInfo:
+    """
+    重置指定Agent的提示词为默认值
+    
+    Args:
+        agent_type: Agent类型
+        
+    Returns:
+        AgentPromptInfo: 重置后的Agent提示词信息
+    """
+    try:
+        # 验证agent_type是否有效
+        if agent_type not in [t.value for t in AgentType]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"无效的Agent类型: {agent_type}，支持的类型: {[t.value for t in AgentType]}"
+            )
+        
+        agent_type_enum = AgentType(agent_type)
+        return agent_prompt_service.reset_agent_to_default(agent_type_enum)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"重置Agent提示词失败: {e}")
+
+
+@router.post("/agents/{agent_type}/prompts/validate")
+async def validate_agent_template_variables(
+    agent_type: str,
+    request: Dict[str, Any] = Body(
+        ...,
+        openapi_examples={
+            "reward_agent_validation": {
+                "summary": "RewardAgent变量验证",
+                "description": "验证RewardAgent需要的模板变量",
+                "value": {
+                    "question": "什么是Python？",
+                    "target_answer": "Python是一种编程语言",
+                    "candidates": ["Python是脚本语言", "Python是解释型语言", "Python是面向对象语言"]
+                }
+            }
+        }
+    )
+) -> Dict[str, Any]:
+    """
+    验证Agent模板变量是否有效
+    
+    Args:
+        agent_type: Agent类型
+        request: 测试变量字典
+        
+    Returns:
+        Dict[str, Any]: 验证结果，包含是否有效、缺失变量、多余变量和渲染预览
+    """
+    try:
+        # 验证agent_type是否有效
+        if agent_type not in [t.value for t in AgentType]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"无效的Agent类型: {agent_type}，支持的类型: {[t.value for t in AgentType]}"
+            )
+        
+        agent_type_enum = AgentType(agent_type)
+        return agent_prompt_service.validate_template_variables(agent_type_enum, request)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"验证模板变量失败: {e}")

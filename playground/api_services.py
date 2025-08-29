@@ -29,13 +29,13 @@ class ConfigService(APIClient):
 
     def get_config(self) -> Dict[str, Any]:
         """获取当前配置"""
-        response = requests.get(f"{self.base_url}/agent/config")
+        response = requests.get(f"{self.base_url}/config")
         response.raise_for_status()
         return response.json()
 
     def update_config(self, config_data: Dict[str, Any]) -> Dict[str, Any]:
         """更新配置"""
-        response = requests.post(f"{self.base_url}/agent/config",
+        response = requests.post(f"{self.base_url}/config",
                                  json=config_data)
         response.raise_for_status()
         return response.json()
@@ -53,7 +53,7 @@ class RewardService(APIClient):
                 "target_answer": item.A
             }
 
-            response = requests.post(f"{self.base_url}/agent/reward",
+            response = requests.post(f"{self.base_url}/reward",
                                      json=reward_data,
                                      timeout=30)
 
@@ -89,7 +89,7 @@ class RewardService(APIClient):
                 }
 
                 async with session.post(
-                        f"{self.base_url}/agent/reward",
+                        f"{self.base_url}/reward",
                         json=reward_data,
                         timeout=aiohttp.ClientTimeout(total=30)) as response:
                     if response.status == 200:
@@ -180,7 +180,7 @@ class BackwardService(APIClient):
                 "gen_p_extra_instructions": gen_p_extra_instructions
             }
 
-            response = requests.post(f"{self.base_url}/agent/backward",
+            response = requests.post(f"{self.base_url}/backward",
                                      json=backward_data,
                                      timeout=120)
 
@@ -215,7 +215,7 @@ class LLMService(APIClient):
                 "stream": False
             }
 
-            response = requests.post(f"{self.base_url}/agent/llm/ask",
+            response = requests.post(f"{self.base_url}/llm/ask",
                                      json=llm_data,
                                      timeout=60)
 
@@ -271,7 +271,7 @@ class LLMService(APIClient):
                 }
 
                 async with session.post(
-                        f"{self.base_url}/agent/llm/ask",
+                        f"{self.base_url}/llm/ask",
                         json=llm_data,
                         timeout=aiohttp.ClientTimeout(total=60)) as response:
                     if response.status == 200:
