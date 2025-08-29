@@ -88,9 +88,9 @@ async def demo_aggregate_chapters():
 
         # 显示聚合结果
         print("\n5. 聚合结果:")
-        print(f"   → 总共生成了 {len(result.chapters)} 个章节")
+        print(f"   → 总共生成了 {len(result)} 个章节")
 
-        for i, chapter in enumerate(result.chapters, 1):
+        for i, chapter in enumerate(result, 1):
             print(f"\n   章节 {i}: {chapter.chapter_name}")
             print(f"   原因: {chapter.reason}")
             print(f"   包含Q&A数量: {len(chapter.qas)}")
@@ -104,7 +104,7 @@ async def demo_aggregate_chapters():
                 print(f"     ... 还有 {len(chapter.qas) - 3} 个Q&A")
 
         # 验证总Q&A数量
-        total_qas = sum(len(chapter.qas) for chapter in result.chapters)
+        total_qas = sum(len(chapter.qas) for chapter in result)
         print(f"   → 验证: 原始Q&A数量 {len(qas)}，聚合后Q&A数量 {total_qas}")
 
         if total_qas == len(qas):

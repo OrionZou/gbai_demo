@@ -10,10 +10,11 @@ async def main():
         "target_answer": "蓝鲸是最大的哺乳动物。"
     }
 
-    async with httpx.AsyncClient() as client:
+    timeout = httpx.Timeout(30.0)  # 把超时调到 30 秒
+    async with httpx.AsyncClient(timeout=timeout) as client:
         resp = await client.post(url, json=payload)
         print("Status:", resp.status_code)
-        print("Response:", resp.json())
+        print("Response:", resp.text)
 
 
 if __name__ == "__main__":

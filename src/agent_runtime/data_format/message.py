@@ -29,4 +29,29 @@ class Message(BaseModel):
 
     def to_openai_format(self) -> Dict[str, Any]:
         msg: Dict[str, Any] = {"role": self.role, "content": self.content}
+        if self.name:
+            msg["name"] = self.name
+        if self.extras:
+            msg.update(self.extras)
         return msg
+
+    @classmethod
+    def from_openai_format(cls, data: Dict[str, Any]) -> "Message":
+        """Create Message from OpenAI format dict"""
+        role = data.get("role", "user")
+        content = data.get("content", "")
+        name = data.get("name")
+        
+        # Extract extras (any fields not in standard format)
+        extras = {}
+        standard_fields = {"role", "content", "name"}
+        for key, value in data.items():
+            if key not in standard_fields:
+                extras[key] = value
+        
+        return cls(
+            role=role,
+            content=content,
+            name=name,
+            extras=extras if extras else None
+        )

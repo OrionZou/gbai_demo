@@ -5,7 +5,7 @@ from agent_runtime.clients.llm.openai_client import LLM  # 你的类所在路径
 from agent_runtime.data_format.context_ai import AIContext
 from agent_runtime.config.loader import LLMSetting
 
-llm = LLM(config_name=LLMSetting.model,llm_setting=)
+llm = LLM(config_name=LLMSetting.model)
 
 
 async def demo_ask() -> None:

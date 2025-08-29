@@ -100,7 +100,6 @@ class Logger(metaclass=SingletonMeta):
             *parts[:-1]) if len(parts) > 1 else self.root_dir
         subdir.mkdir(parents=True, exist_ok=True)
         file_path = subdir / f"{parts[-1]}.log"
-
         # 若该模块还没有专属 sink，则创建（并把当前这条日志手动补写一行，避免“首条丢失”）
         if module_name not in self._module_sinks:
             with self._lock:
