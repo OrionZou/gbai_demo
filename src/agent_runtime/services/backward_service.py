@@ -1,6 +1,5 @@
 import json
 import asyncio
-from jinja2 import Template
 from typing import List, Dict, Any, Tuple, Optional
 from pydantic import BaseModel, Field, ConfigDict
 
@@ -8,6 +7,8 @@ from agent_runtime.clients.llm.openai_client import LLM
 from agent_runtime.clients.utils import normalize_to_list
 from agent_runtime.data_format.context_ai import AIContext
 from agent_runtime.logging.logger import logger
+from agent_runtime.agents.agg_chapters_agent import AggChaptersAgent
+from agent_runtime.agents.gen_chpt_p_agent import GenChptPAgent
 
 # -----------------------------
 # 数据模型
@@ -106,90 +107,10 @@ def chapters_to_ospa(chapters: List[ChapterGroup]) -> List[OSPA]:
 
 
 # -----------------------------
-# 系统提示词模板
+# 注意：原来的提示词模板现在移动到了专门的Agent中
+# - AggChaptersAgent: 负责章节聚合
+# - GenChptPAgent: 负责章节提示词生成
 # -----------------------------
-CHAPTER_SYS = (
-    "你是优秀的技术编辑，擅长为知识手册将 Q&A 素材进行主题化分章与聚合。"
-    "要求：\n"
-    "1) 先观察所有 Q 与 A 的主题相似度，进行语义聚类；\n"
-    "2) 生成清晰、去重、非重叠的章节名；\n"
-    "3) 每个章节配简短的聚合原因；\n"
-    "4) 严格输出 JSON，字段为：chapters=[{chapter_name, reason, qas=[{q,a}]}];\n")
-"""章节聚合系统提示词
-用于指导LLM将问答对按语义相似度聚合成有意义的章节结构
-"""
-
-CHAPTER_USER_TEMPLATE = """
-请将以下 Q&A 素材聚合为章节 JSON：
-
-【输入 Q&A 列表】：
-{% for qa in qas %}
-{{ loop.index }}. {{ qa }}
-{% endfor %}
-
-【补充约束】：
-{% if extra_instructions -%}
-{{ extra_instructions }}
-{%- endif %}
-
-【输出 JSON 严格格式】：
-{
-  "chapters": [
-    {
-      "chapter_name": "...",
-      "reason": "...",
-      "qas": [{"q":"...", "a":"..."}]
-    }
-  ]
-}
-
-"""
-"""章节聚合用户提示词模板
-使用Jinja2模板语法，支持动态插入问答对列表和额外指令
-"""
-
-chapter_user_template = Template(CHAPTER_USER_TEMPLATE)
-
-GEN_P_SYS = """
-你是提示词工程专家与技术编辑。目标：为给定的章节，产出一个'辅助提示词 prompt'，该提示词将与 {chapter_name, q} 一起提供给 LLM，用于更准确地生成 a。
-
-要求：
- - 严格限定知识范围：只依据本章节的主题与提供的 Q&A 语料，不得臆造外部事实；
- - 当问题超出本章节范围或缺乏依据时，应指导回答者明确说明'依据不足'并给出继续提问方向；
- - 语气专业、克制、面向技术文档；
- - 输出语言与输入示例主要语言一致（若示例以中文为主则输出中文）；
- - 优先使用示例中的术语与命名，保持一致性；
- - 回答策略：若是概念性问题先给定义与边界；若是流程/配置问题给步骤或要点清单；
- - 禁止包含与问题无关的客套话、个人观点、链接；
-"""
-"""章节提示词生成系统提示词
-用于指导LLM为每个章节生成专用的辅助提示词，确保提示词质量和一致性
-"""
-
-GEN_P_USER_TEMPLATE_ZH = """
-章节名称：{{ chapter_name }}
-
-{% if reason %}
-章节聚合理由：{{ reason }}
-{% endif %}
-
-【补充约束】：
-{% if extra_instructions -%}
-{{ extra_instructions }}
-{%- endif %}
-
-【章节相关示例】：
-{% for qa in qas %}
-{{ loop.index }}. {{ qa }}
-{% endfor %}
-
-请生成一个可复用的章节级辅助提示词，用于指导 LLM 依据该章节回答此主题下的问题。
-"""
-"""章节提示词生成用户提示词模板
-中文版本，用于为特定章节生成专用的辅助提示词。支持动态插入章节信息、示例和额外约束。
-"""
-
-gen_p_user_template = Template(GEN_P_USER_TEMPLATE_ZH)
 
 
 # -----------------------------
@@ -208,6 +129,8 @@ class BackwardService:
     
     Attributes:
         llm_client (LLM): 大语言模型客户端，用于执行聚合和生成任务
+        agg_chapters_agent (AggChaptersAgent): 章节聚合Agent
+        gen_chpt_p_agent (GenChptPAgent): 章节提示词生成Agent
     """
 
     def __init__(self, llm_client: LLM) -> None:
@@ -217,15 +140,20 @@ class BackwardService:
             llm_client (LLM): 大语言模型客户端实例
         """
         self.llm_client = llm_client
+        # 初始化专用的Agent实例
+        self.agg_chapters_agent = AggChaptersAgent(llm_engine=llm_client)
+        self.gen_chpt_p_agent = GenChptPAgent(llm_engine=llm_client)
+        
+        logger.info("BackwardService initialized with AggChaptersAgent and GenChptPAgent")
 
     async def _aggregate_chapters(
             self,
             qas: List[Tuple[str, str]],
             extra_instructions: str = "",
             ctx: Optional[AIContext] = None) -> List[ChapterGroup]:
-        """调用 LLM 将 Q&A 聚合成章节结构
+        """使用AggChaptersAgent将 Q&A 聚合成章节结构
         
-        该方法使用大语言模型分析问答对的语义相似度，将相关的Q&A
+        该方法使用专门的章节聚合Agent分析问答对的语义相似度，将相关的Q&A
         聚合到同一个章节中，并生成章节名称和聚合理由。
         
         Args:
@@ -237,23 +165,17 @@ class BackwardService:
             List[ChapterGroup]: 聚合后的章节组列表
             
         Raises:
-            Exception: 当LLM调用失败或返回格式不正确时抛出异常
+            Exception: 当Agent调用失败或返回格式不正确时抛出异常
         """
-        if ctx is None:
-            ctx = AIContext()
+        logger.debug("Using AggChaptersAgent for chapter aggregation")
+        
+        # 使用AggChaptersAgent进行章节聚合
+        json_list = await self.agg_chapters_agent.aggregate_chapters(
+            qas=qas, 
+            extra_instructions=extra_instructions
+        )
 
-        ctx.add_system_prompt(CHAPTER_SYS)
-        rendered_prompt = chapter_user_template.render(
-            qas=qas, extra_instructions=extra_instructions)
-
-        ctx.add_user_prompt(rendered_prompt)
-
-        logger.debug("LLM INPUT: {}", ctx.to_openai_format())
-        json_data = await self.llm_client.structured_output_old(
-            messages=ctx.to_openai_format())
-        json_list = normalize_to_list(json_data)
-
-        logger.debug(f"json_list:{json_list}")
+        logger.debug(f"AggChaptersAgent result: {json_list}")
 
         results = []
         for data in json_list:
@@ -265,10 +187,10 @@ class BackwardService:
             chapter_group: ChapterGroup,
             extra_instructions: str = "",
             ctx: Optional[AIContext] = None) -> ChapterGroup:
-        """为每个章节生成辅助提示词
+        """使用GenChptPAgent为每个章节生成辅助提示词
         
-        基于章节的主题和包含的Q&A示例，生成一个专用的提示词，
-        该提示词将指导LLM如何基于该章节的知识回答相关问题。
+        基于章节的主题和包含的Q&A示例，使用专门的提示词生成Agent
+        生成一个专用的提示词，该提示词将指导LLM如何基于该章节的知识回答相关问题。
         
         Args:
             chapter_group (ChapterGroup): 需要生成提示词的章节组
@@ -279,23 +201,19 @@ class BackwardService:
             ChapterGroup: 包含生成的提示词的章节组
             
         Raises:
-            Exception: 当LLM调用失败时抛出异常
+            Exception: 当Agent调用失败时抛出异常
         """
-        if ctx is None:
-            ctx = AIContext()
-
-        ctx.add_system_prompt(GEN_P_SYS)
-        rendered_prompt = gen_p_user_template.render(
+        logger.debug(f"Using GenChptPAgent for chapter '{chapter_group.chapter_name}' prompt generation")
+        
+        # 使用GenChptPAgent生成章节提示词
+        prompt_val = await self.gen_chpt_p_agent.generate_chapter_prompt(
             chapter_name=chapter_group.chapter_name,
-            reason=chapter_group.reason,
             qas=chapter_group.qas,
-            extra_instructions=extra_instructions)
-        ctx.add_user_prompt(rendered_prompt)
-
-        prompt_val = await self.llm_client.ask(messages=ctx.to_openai_format(),
-                                               temperature=0.3)
+            reason=chapter_group.reason,
+            extra_instructions=extra_instructions
+        )
+        
         chapter_group.prompt = prompt_val
-
         return chapter_group
 
     async def backward(
