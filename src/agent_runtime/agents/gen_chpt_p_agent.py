@@ -17,7 +17,7 @@ class GenChptPAgent(BaseAgent):
     章节提示词生成Agent
     专门负责为章节生成专用的辅助提示词，指导LLM基于特定章节回答问题
     """
-    
+
     # 默认agent名称
     DEFAULT_AGENT_NAME = "gen_chpt_p_agent"
 
@@ -80,58 +80,59 @@ class GenChptPAgent(BaseAgent):
     async def step(self, context: Optional[AIContext] = None, **kwargs) -> str:
         """
         执行章节提示词生成任务
-        
+
         Args:
             context: 可选的外部上下文
             **kwargs: 包含章节信息的参数
-            
+
         Expected kwargs:
             chapter_name (str): 章节名称
             reason (str, optional): 章节聚合理由
             qas (List): 章节包含的问答对
             extra_instructions (str, optional): 额外的生成指令
-            
+
         Returns:
             str: 生成的章节提示词
         """
         # 获取参数
-        chapter_name = kwargs.get('chapter_name')
-        reason = kwargs.get('reason', '')
-        qas = kwargs.get('qas', [])
-        extra_instructions = kwargs.get('extra_instructions', '')
-        
+        chapter_name = kwargs.get("chapter_name")
+        reason = kwargs.get("reason", "")
+        qas = kwargs.get("qas", [])
+        extra_instructions = kwargs.get("extra_instructions", "")
+
         if not chapter_name:
             raise ValueError("chapter_name parameter is required for prompt generation")
-        
+
         # 如果没有提供外部上下文，创建新的上下文
         if context is None:
             working_context = AIContext()
             working_context.add_system_prompt(self.system_prompt)
         else:
             working_context = context
-            
+
         # 渲染用户提示词
         rendered_prompt = self._render_user_prompt(
             chapter_name=chapter_name,
             reason=reason,
             qas=qas,
-            extra_instructions=extra_instructions
+            extra_instructions=extra_instructions,
         )
         working_context.add_user_prompt(rendered_prompt)
-        
+
         try:
             logger.debug(f"Generating prompt for chapter: {chapter_name}")
             openai_messages = working_context.to_openai_format()
-            
+
             # 调用LLM生成提示词
             prompt_content = await self.llm_engine.ask(
-                messages=openai_messages,
-                temperature=0.3
+                messages=openai_messages, temperature=0.3
             )
-            
-            logger.debug(f"Generated prompt for chapter '{chapter_name}': {prompt_content[:100]}...")
+
+            logger.debug(
+                f"Generated prompt for chapter '{chapter_name}': {prompt_content[:100]}..."
+            )
             return prompt_content
-            
+
         except Exception as e:
             logger.error(f"Chapter prompt generation failed for '{chapter_name}': {e}")
             raise
@@ -141,17 +142,17 @@ class GenChptPAgent(BaseAgent):
         chapter_name: str,
         qas: List[Dict[str, str]],
         reason: str = "",
-        extra_instructions: str = ""
+        extra_instructions: str = "",
     ) -> str:
         """
         章节提示词生成的便捷方法
-        
+
         Args:
             chapter_name: 章节名称
             qas: 章节包含的问答对列表
             reason: 章节聚合理由
             extra_instructions: 额外的生成指令
-            
+
         Returns:
             str: 生成的章节提示词
         """
@@ -159,5 +160,5 @@ class GenChptPAgent(BaseAgent):
             chapter_name=chapter_name,
             reason=reason,
             qas=qas,
-            extra_instructions=extra_instructions
+            extra_instructions=extra_instructions,
         )
