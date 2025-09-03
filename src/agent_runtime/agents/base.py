@@ -18,20 +18,20 @@ class BaseAgent(ABC):
         context (AIContext): AI对话上下文
         llm_engine (LLM): LLM客户端引擎
     """
-    
+
     _instances = {}
     _lock = threading.Lock()
     _initialized = set()
 
     def __new__(cls, *args, **kwargs):
         # 从kwargs中获取agent_name，如果没有则从args中获取，最后使用类的默认值
-        agent_name = kwargs.get('agent_name')
+        agent_name = kwargs.get("agent_name")
         if agent_name is None and args:
             agent_name = args[0] if isinstance(args[0], str) else None
         if agent_name is None:
             # 如果仍然没有agent_name，使用类的默认值（子类应该重写此属性）
-            agent_name = getattr(cls, 'DEFAULT_AGENT_NAME', cls.__name__.lower())
-        
+            agent_name = getattr(cls, "DEFAULT_AGENT_NAME", cls.__name__.lower())
+
         with cls._lock:
             if agent_name not in cls._instances:
                 cls._instances[agent_name] = super().__new__(cls)
@@ -40,7 +40,7 @@ class BaseAgent(ABC):
     def __init__(
         self,
         agent_name: str = None,
-        llm_engine: LLM = None,
+        llm_engine: LLM = LLM(),
         system_prompt: str = "",
         user_prompt_template: str = "",
     ):
@@ -55,11 +55,13 @@ class BaseAgent(ABC):
         """
         # 确定最终的agent_name
         if agent_name is None:
-            agent_name = getattr(self.__class__, 'DEFAULT_AGENT_NAME', self.__class__.__name__.lower())
-        
+            agent_name = getattr(
+                self.__class__, "DEFAULT_AGENT_NAME", self.__class__.__name__.lower()
+            )
+
         if agent_name in self._initialized:
             return
-            
+
         self.agent_name = agent_name
         self.llm_engine = llm_engine
         self.system_prompt = system_prompt

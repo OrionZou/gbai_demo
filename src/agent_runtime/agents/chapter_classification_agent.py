@@ -1,0 +1,313 @@
+import uuid
+from typing import List, Dict, Any, Optional
+from pydantic import BaseModel, Field
+
+from agent_runtime.agents.base import BaseAgent
+from agent_runtime.agents.chapter_mixin import ChapterAgentMixin
+from agent_runtime.data_format.context_ai import AIContext
+from agent_runtime.data_format.qa_format import CQAList
+from agent_runtime.data_format.chapter_format import (
+    ChapterStructure, ChapterNode
+)
+from agent_runtime.logging.logger import logger
+
+
+class ChapterClassificationResult(BaseModel):
+    """章节分类结果"""
+
+    index: str = Field(..., description="待归类内容的索引编号")
+    target_chapter_id: str = Field(..., description="目标章节的ID")
+    confidence: float = Field(..., ge=0.0, le=1.0, description="分类置信度，范围0~1")
+    reasoning: str = Field(..., description="归类理由")
+    create_new_chapter: bool = Field(False, description="是否需要创建新章节")
+    new_chapter: Dict[str, Any] = Field(
+        default_factory=dict, description="新章节的信息（若需要）"
+    )
+
+
+class ChapterClassificationAgent(BaseAgent, ChapterAgentMixin):
+    """
+    章节分类Agent
+    基于BaseAgent开发，专门负责将CQA内容归类到章节结构中
+    """
+
+    DEFAULT_AGENT_NAME = "chapter_classification_agent"
+
+    DEFAULT_SYSTEM_PROMPT = """你是一个专业的内容分类专家，负责将对话内容合理归类到已有的章节结构中。
+
+你的任务：
+- 分析单个CQA对话内容的主题和性质
+- 在已有章节结构中找到最合适的章节进行归类
+- 如果现有结构不合适，建议创建新章节或子章节
+- 确保新章节与现有结构协调一致，不超过指定最大层数
+
+分类原则：
+- 准确理解对话内容的主题
+- 选择最相关的章节进行归类
+- 避免创建过多细分章节
+- 新建章节要有充分理由
+- 严格控制层级深度
+- 单个CPA 仅可以归类到唯一最相关的章节中
+"""
+
+    CLASSIFY_CONTENT_TEMPLATE = """请将以下对话内容归类到合适的章节中，或建议创建新章节：
+
+现有章节结构：
+{{chapter_tree}}
+
+待归类的对话内容：
+{% for cqa_list in cqa_lists %}
+{% set outer_index = loop.index %}
+{% for cqa in cqa_list %}
+{{ outer_index }}-{{ loop.index }}. 
+{{ cqa }}
+{% endfor %}
+{% endfor %}
+最大层数限制：{{max_level}}
+
+要求：
+1. 分析每组对话内容的主题和性质
+2. 为每组对话找到最合适的章节进行归类
+3. 如果现有结构不合适，建议创建新章节（不超过{{max_level}}层）
+4. 提供归类理由和置信度
+
+请按以下JSON数组格式返回归类结果（每组对话一个结果）：
+
+[
+
+{% for cqa_list in cqa_lists %}
+{% set outer_index = loop.index %}
+{% for cqa in cqa_list %}
+  {
+    "index": "{{ outer_index }}-{{ loop.index }}",
+    "target_chapter_id": "章节ID",
+    "confidence": 0.85,
+    "reasoning": "归类理由",
+    "create_new_chapter": false,
+    "new_chapter": {
+      "title": "新章节标题",
+      "parent_id": "父章节ID",
+      "description": "章节描述"
+    }
+  }{% if not loop.last %},{% endif %}
+{% endfor %}
+{% endfor %}
+  ]
+"""
+
+    def __init__(self, **kwargs):
+        super().__init__(
+            system_prompt=self.DEFAULT_SYSTEM_PROMPT,
+            user_prompt_template=self.CLASSIFY_CONTENT_TEMPLATE,
+            **kwargs,
+        )
+
+    async def step(self, context: AIContext = None, **kwargs) -> Any:
+        """执行一步Agent推理"""
+        temp_context = context or self.context
+
+        user_prompt = self._render_user_prompt(**kwargs)
+        temp_context.add_user_prompt(user_prompt)
+        print(f"{user_prompt}")
+        response = await self.llm_engine.ask(temp_context.to_openai_format())
+
+        if context is None:
+            self.context.add_assistant(response)
+
+        return response
+
+    async def classify_content(
+        self,
+        cqa_lists: List[CQAList],
+        chapter_structure: ChapterStructure,
+        max_level: int = 3,
+    ) -> List[ChapterClassificationResult]:
+        """
+        将CQA内容分类到章节结构中
+
+        Args:
+            cqa_lists: 待分类的CQA内容列表
+            chapter_structure: 现有章节结构
+            max_level: 最大层数限制
+
+        Returns:
+            分类结果列表，与输入的cqa_lists一一对应
+        """
+        try:
+            chapter_tree = self._generate_chapter_tree_text(chapter_structure)
+            logger.info(f"cqa_lists len:{len(cqa_lists)}")
+
+            response = await self.step(
+                chapter_tree=chapter_tree, cqa_lists=cqa_lists, max_level=max_level
+            )
+
+            classification_data_list: List[Dict[str, Any]] = (
+                self._parse_classification_response(response)
+            )
+
+            results = []
+            for i, classification_data in enumerate(classification_data_list):
+                result: ChapterClassificationResult = (
+                    self._build_classification_result(
+                        classification_data, chapter_structure
+                    )
+                )
+                # 关联CQA案例到对应章节
+                self._associate_cqa_to_chapter(
+                    result, cqa_lists, chapter_structure
+                )
+                
+                logger.debug(
+                    f"第{i+1}条内容分类结果: {result.target_chapter_id}, "
+                    f"置信度: {result.confidence}"
+                )
+                results.append(result)
+
+            return results
+
+        except Exception as e:
+            logger.error(f"内容分类失败: {e}")
+            return [
+                self._create_default_classification(chapter_structure)
+                for _ in cqa_lists
+            ]
+
+    def _generate_chapter_tree_text(self, structure: ChapterStructure) -> str:
+        """生成章节树文本"""
+        lines = []
+
+        def _build_tree(node_id: str, indent: str = "") -> None:
+            if node_id not in structure.nodes:
+                return
+
+            node: ChapterNode = structure.nodes[node_id]
+            lines.append(
+                f"{indent}- {node.title} (ID: {node.id}, 层级: {node.level})"
+            )
+            if node.description:
+                lines.append(f"{indent}  描述: {node.description}")
+
+            for child_id in node.children:
+                _build_tree(child_id, indent + "  ")
+
+        for root_id in structure.root_ids:
+            _build_tree(root_id)
+
+        return "\n".join(lines)
+
+    def _parse_classification_response(
+        self, response: str
+    ) -> List[Dict[str, Any]]:
+        """解析分类响应"""
+        result = self._parse_json_array_response(response)
+        if result:
+            return result
+        
+        # 解析失败，返回默认结果
+        return [
+            {
+                "target_chapter_id": "default",
+                "confidence": 0.5,
+                "reasoning": "解析失败，使用默认分类",
+                "create_new_chapter": False,
+            }
+        ]
+
+    def _build_classification_result(
+        self,
+        classification_data: Dict[str, Any],
+        chapter_structure: ChapterStructure,
+    ) -> ChapterClassificationResult:
+        """构建分类结果对象"""
+        index: Any = classification_data.get("index", "")
+        target_id = classification_data.get("target_chapter_id", "default")
+        confidence = classification_data.get("confidence", 0.5)
+        reasoning = classification_data.get("reasoning", "无理由说明")
+        create_new = classification_data.get("create_new_chapter", False)
+        new_chapter = classification_data.get("new_chapter", {})
+
+        # 验证目标章节是否存在
+        if target_id not in chapter_structure.nodes and not create_new:
+            target_id = self._get_default_chapter_id(chapter_structure)
+            reasoning = f"原目标章节不存在，改为默认章节。{reasoning}"
+
+        return ChapterClassificationResult(
+            index=index,
+            target_chapter_id=target_id,
+            confidence=confidence,
+            reasoning=reasoning,
+            create_new_chapter=create_new,
+            new_chapter=new_chapter,
+        )
+
+    def _create_new_chapter_node(
+        self,
+        chapter_info: Dict[str, Any],
+        structure: ChapterStructure,
+        max_level: int,
+    ) -> Optional[ChapterNode]:
+        """创建新章节节点"""
+        title = chapter_info.get("title", "").strip()
+        if not title:
+            logger.error("新章节标题为空")
+            return None
+
+        parent_id = chapter_info.get("parent_id")
+        level = 1
+
+        # 确定层级
+        if parent_id and parent_id in structure.nodes:
+            parent_node = structure.nodes[parent_id]
+            level = min(parent_node.level + 1, max_level)
+            if level > max_level:
+                logger.warning(
+                    f"新章节层级超出限制，调整为最大层级{max_level}"
+                )
+                level = max_level
+
+        return ChapterNode(
+            id=str(uuid.uuid4()),
+            title=title,
+            level=level,
+            parent_id=parent_id,
+            description=chapter_info.get("description", ""),
+        )
+
+    def _get_default_chapter_id(self, structure: ChapterStructure) -> str:
+        """获取默认章节ID"""
+        if structure.root_ids:
+            return structure.root_ids[0]
+        return "default"
+
+    def _create_default_classification(
+        self, structure: ChapterStructure
+    ) -> ChapterClassificationResult:
+        """创建默认分类结果"""
+        target_id = self._get_default_chapter_id(structure)
+
+        return ChapterClassificationResult(
+            index="",
+            target_chapter_id=target_id,
+            confidence=0.5,
+            reasoning="分类失败，使用默认章节",
+            create_new_chapter=False,
+        )
+    
+    def _associate_cqa_to_chapter(
+        self,
+        result: ChapterClassificationResult,
+        cqa_lists: List[CQAList],
+        structure: ChapterStructure,
+    ) -> None:
+        """将CQA案例关联到对应章节"""
+        if not result.index or not result.target_chapter_id:
+            return
+        
+        cqa_item = self._get_cqa_item_from_index(result.index, cqa_lists)
+        if cqa_item and result.target_chapter_id in structure.nodes:
+            target_node = structure.nodes[result.target_chapter_id]
+            target_node.add_cqa_item(cqa_item)
+            logger.debug(
+                f"将CQA案例 {result.index} (ID: {cqa_item.cqa_id}) "
+                f"关联到章节 {target_node.title}"
+            )
