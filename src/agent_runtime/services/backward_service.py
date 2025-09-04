@@ -3,6 +3,8 @@ import asyncio
 from typing import List, Dict, Any, Tuple, Optional
 from pydantic import BaseModel, Field, ConfigDict
 
+from agent_runtime.data_format.ospa import OSPA
+# from agent_runtime.data_format.qa_format import q
 from agent_runtime.clients.llm.openai_client import LLM
 from agent_runtime.clients.utils import normalize_to_list
 from agent_runtime.data_format.context_ai import AIContext
@@ -41,21 +43,6 @@ class ChapterGroup(BaseModel):
     prompt: Optional[str] = None  # 章节级辅助提示词
 
 
-class OSPA(BaseModel):
-    """OSPA数据模型
-    
-    OSPA是用于结构化知识表示的四元组模型，包含目标、场景、提示和答案四个维度。
-    
-    Attributes:
-        o (str): Objective - 目标，通常是用户的问题或查询内容
-        s (str): Scenario - 场景，描述问题所属的上下文或章节信息
-        p (str): Prompt - 提示，指导LLM如何基于特定场景回答问题的提示词
-        a (str): Answer - 答案，对应问题的标准答案
-    """
-    o: str  # Objective - 目标问题
-    s: str  # Scenario - 场景上下文
-    p: str  # Prompt - 辅助提示词
-    a: str  # Answer - 标准答案
 
 
 def chapter_to_ospa(chapter: ChapterGroup) -> List[OSPA]:
@@ -143,7 +130,7 @@ class BackwardService:
         # 初始化专用的Agent实例
         self.agg_chapters_agent = AggChaptersAgent(llm_engine=llm_client)
         self.gen_chpt_p_agent = GenChptPAgent(llm_engine=llm_client)
-        
+
         logger.info("BackwardService initialized with AggChaptersAgent and GenChptPAgent")
 
     async def _aggregate_chapters(
@@ -168,10 +155,10 @@ class BackwardService:
             Exception: 当Agent调用失败或返回格式不正确时抛出异常
         """
         logger.debug("Using AggChaptersAgent for chapter aggregation")
-        
+
         # 使用AggChaptersAgent进行章节聚合
         json_list = await self.agg_chapters_agent.aggregate_chapters(
-            qas=qas, 
+            qas=qas,
             extra_instructions=extra_instructions
         )
 
@@ -204,7 +191,7 @@ class BackwardService:
             Exception: 当Agent调用失败时抛出异常
         """
         logger.debug(f"Using GenChptPAgent for chapter '{chapter_group.chapter_name}' prompt generation")
-        
+
         # 使用GenChptPAgent生成章节提示词
         prompt_val = await self.gen_chpt_p_agent.generate_chapter_prompt(
             chapter_name=chapter_group.chapter_name,
@@ -212,7 +199,7 @@ class BackwardService:
             reason=chapter_group.reason,
             extra_instructions=extra_instructions
         )
-        
+
         chapter_group.prompt = prompt_val
         return chapter_group
 

@@ -7,9 +7,12 @@ from agent_runtime.services.reward_service import RewardService, RewardRusult
 from agent_runtime.clients.llm.openai_client import LLM
 from agent_runtime.config.loader import SettingLoader, LLMSetting
 from agent_runtime.services.backward_service import BackwardService, ChapterGroup, OSPA
+from agent_runtime.services.backward_v2_service import BackwardV2Service
 from agent_runtime.services.agent_prompt_service import (
     AgentPromptService, AgentPromptInfo, AgentPromptUpdate
 )
+from agent_runtime.data_format.backward_v2_format import BackwardV2Request, BackwardV2Response
+from agent_runtime.data_format.qa_format import QAItem as QAItemData, QAList
 
 router = APIRouter()
 
@@ -71,6 +74,7 @@ class LLMAskResponse(BaseModel):
 llm_client = LLM()
 reward_service = RewardService(llm_client)
 backward_service = BackwardService(llm_client)
+backward_v2_service = BackwardV2Service(llm_client)
 agent_prompt_service = AgentPromptService(llm_client)
 
 
@@ -108,11 +112,12 @@ async def set_config(cfg: LLMSetting = Body(
     try:
         new_cfg = SettingLoader.set_llm_setting(
             cfg.model_dump(exclude_none=True))
-        global llm_client, reward_service, backward_service, agent_prompt_service
+        global llm_client, reward_service, backward_service, backward_v2_service, agent_prompt_service
         # 重新构建 LLM 客户端 (简化为使用默认构造函数，内部读取新的 SettingLoader 配置)
         llm_client = LLM(llm_setting=new_cfg)
         reward_service = RewardService(llm_client)
         backward_service = BackwardService(llm_client)
+        backward_v2_service = BackwardV2Service(llm_client)
         agent_prompt_service = AgentPromptService(llm_client)
         return {"message": "配置已更新", "config": new_cfg.model_dump()}
     except Exception as e:
@@ -665,3 +670,169 @@ async def validate_agent_template_variables(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"验证模板变量失败: {e}")
+
+
+# ======================= Backward V2 API ==========================
+
+class QAListRequest(BaseModel):
+    """QA列表请求模型（API用）"""
+    items: List[QAItem]
+    session_id: str = ""
+
+
+@router.post("/backward_v2", response_model=BackwardV2Response)
+async def backward_v2_api(request: BackwardV2Request = Body(
+    ...,
+    openapi_examples={
+        "simple_example": {
+            "summary": "简单示例 - 无现有章节目录",
+            "description": "包含两个对话序列，无现有章节目录，需要生成新的章节结构",
+            "value": {
+                "qa_lists": [
+                    {
+                        "items": [
+                            {"question": "Python如何定义变量？", "answer": "在Python中使用赋值语句定义变量，如 x = 10"},
+                            {"question": "如何查看变量类型？", "answer": "使用type()函数可以查看变量类型，如 type(x)"}
+                        ],
+                        "session_id": "session_1"
+                    },
+                    {
+                        "items": [
+                            {"question": "什么是RESTful API？", "answer": "RESTful API是遵循REST架构风格的Web服务接口"},
+                            {"question": "API设计有什么原则？", "answer": "API设计要遵循统一接口、无状态、可缓存等原则"}
+                        ],
+                        "session_id": "session_2"
+                    }
+                ],
+                "max_level": 3
+            }
+        },
+        "with_existing_chapters": {
+            "summary": "复杂示例 - 有现有章节目录",
+            "description": "包含现有章节目录，需要更新章节结构",
+            "value": {
+                "qa_lists": [
+                    {
+                        "items": [
+                            {"question": "什么是Docker容器？", "answer": "Docker容器是轻量级的虚拟化技术"},
+                            {"question": "容器与虚拟机的区别？", "answer": "容器共享宿主机内核，虚拟机有独立的操作系统"}
+                        ],
+                        "session_id": "session_3"
+                    }
+                ],
+                "chapter_structure": {
+                    "nodes": {
+                        "chapter_1": {
+                            "id": "chapter_1",
+                            "title": "基础知识",
+                            "level": 1,
+                            "parent_id": None,
+                            "children": [],
+                            "description": "基础技术概念",
+                            "related_cqa_items": [],
+                            "related_cqa_ids": [],
+                            "chapter_number": "1."
+                        }
+                    },
+                    "root_ids": ["chapter_1"],
+                    "max_level": 3
+                },
+                "max_level": 3
+            }
+        }
+    }
+)) -> BackwardV2Response:
+    """
+    Backward V2 API - 改进版的知识反向处理接口
+    
+    利用 cqa_agent、chapter_structure_agent、chapter_classification_agent 和 gen_chpt_p_agent 
+    这四个专门的 agent 处理 Q&A 二维列表，生成章节目录和 OSPA。
+    
+    主要功能：
+    1. Q&A 转 CQA：使用 cqa_agent 将问答对转换为带上下文的格式
+    2. 章节构建或更新：
+       - 无现有章节：使用 chapter_structure_agent 生成新章节目录
+       - 有现有章节：使用 chapter_classification_agent 更新现有目录
+    3. 提示词生成：使用 gen_chpt_p_agent 为每个章节生成专用提示词
+    4. OSPA 转换：将最终结果转换为 OSPA 格式
+    
+    与 backward API 的区别：
+    - backward_v2 支持多轮对话的二维列表输入
+    - 支持现有章节目录的更新和分类
+    - 使用更专业的 agent 进行处理
+    - 提供更详细的操作日志
+    
+    适用场景：
+    - 多轮对话知识库的构建
+    - 现有知识结构的增量更新
+    - 复杂知识体系的结构化处理
+    - 教学内容的智能组织
+    
+    Args:
+        request: BackwardV2Request 包含 Q&A 二维列表和可选的章节目录
+        
+    Returns:
+        BackwardV2Response: 包含最终章节结构、OSPA 列表和操作日志
+        
+    Raises:
+        HTTPException: 当输入验证失败或处理过程中发生错误时
+    """
+    # 输入验证
+    if not request.qa_lists:
+        raise HTTPException(status_code=400, detail="Q&A列表不能为空")
+    
+    if len(request.qa_lists) > 20:  # 设置合理的对话序列上限
+        raise HTTPException(status_code=400, detail="对话序列数量不能超过20个")
+    
+    # 验证每个对话序列
+    total_qas = 0
+    for i, qa_list in enumerate(request.qa_lists):
+        if not qa_list.items:
+            raise HTTPException(status_code=400, detail=f"第{i+1}个对话序列不能为空")
+        
+        if len(qa_list.items) > 50:  # 单个对话序列的问答对上限
+            raise HTTPException(status_code=400, detail=f"第{i+1}个对话序列的问答对不能超过50个")
+        
+        # 验证问答对内容
+        for j, qa in enumerate(qa_list.items):
+            if not qa.question.strip():
+                raise HTTPException(status_code=400, detail=f"第{i+1}个对话序列第{j+1}个问题不能为空")
+            if not qa.answer.strip():
+                raise HTTPException(status_code=400, detail=f"第{i+1}个对话序列第{j+1}个答案不能为空")
+            if len(qa.question) > 1000:
+                raise HTTPException(status_code=400, detail=f"第{i+1}个对话序列第{j+1}个问题长度不能超过1000字符")
+            if len(qa.answer) > 2000:
+                raise HTTPException(status_code=400, detail=f"第{i+1}个对话序列第{j+1}个答案长度不能超过2000字符")
+        
+        total_qas += len(qa_list.items)
+    
+    if total_qas > 200:  # 总问答对数量限制
+        raise HTTPException(status_code=400, detail=f"总问答对数量不能超过200个，当前{total_qas}个")
+    
+    # 验证最大层级
+    if request.max_level < 1 or request.max_level > 5:
+        raise HTTPException(status_code=400, detail="最大层级必须在1-5之间")
+    
+    import time
+    start_time = time.time()
+    
+    try:
+        # 调用 BackwardV2Service 处理
+        response = await backward_v2_service.process(request)
+        
+        # 计算处理时间
+        processing_time_ms = int((time.time() - start_time) * 1000)
+        
+        # 添加处理时间到操作日志
+        response.operation_log.append(f"总处理时间: {processing_time_ms}ms")
+        
+        return response
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"输入数据格式错误: {str(e)}")
+    except Exception as e:
+        import traceback
+        error_detail = f"Backward V2 处理失败: {str(e)}"
+        # 在开发环境中可以添加详细错误信息
+        # error_detail += f"\n{traceback.format_exc()}"
+        raise HTTPException(status_code=500, detail=error_detail)

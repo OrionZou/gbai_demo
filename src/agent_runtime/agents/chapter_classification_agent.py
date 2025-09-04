@@ -1,5 +1,5 @@
 import uuid
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from pydantic import BaseModel, Field
 
 from agent_runtime.agents.base import BaseAgent
@@ -59,7 +59,7 @@ class ChapterClassificationAgent(BaseAgent, ChapterAgentMixin):
 {% for cqa_list in cqa_lists %}
 {% set outer_index = loop.index %}
 {% for cqa in cqa_list %}
-{{ outer_index }}-{{ loop.index }}. 
+{{ outer_index }}-{{ loop.index }}.
 {{ cqa }}
 {% endfor %}
 {% endfor %}
@@ -121,7 +121,7 @@ class ChapterClassificationAgent(BaseAgent, ChapterAgentMixin):
         cqa_lists: List[CQAList],
         chapter_structure: ChapterStructure,
         max_level: int = 3,
-    ) -> List[ChapterClassificationResult]:
+    ) -> Tuple[List[ChapterClassificationResult], ChapterStructure]:
         """
         将CQA内容分类到章节结构中
 
@@ -131,14 +131,16 @@ class ChapterClassificationAgent(BaseAgent, ChapterAgentMixin):
             max_level: 最大层数限制
 
         Returns:
-            分类结果列表，与输入的cqa_lists一一对应
+            元组：(分类结果列表, 更新后的章节结构)
         """
         try:
             chapter_tree = self._generate_chapter_tree_text(chapter_structure)
             logger.info(f"cqa_lists len:{len(cqa_lists)}")
 
             response = await self.step(
-                chapter_tree=chapter_tree, cqa_lists=cqa_lists, max_level=max_level
+                chapter_tree=chapter_tree,
+                cqa_lists=cqa_lists,
+                max_level=max_level
             )
 
             classification_data_list: List[Dict[str, Any]] = (
@@ -146,15 +148,30 @@ class ChapterClassificationAgent(BaseAgent, ChapterAgentMixin):
             )
 
             results = []
+            updated_structure = chapter_structure
+            
             for i, classification_data in enumerate(classification_data_list):
                 result: ChapterClassificationResult = (
                     self._build_classification_result(
-                        classification_data, chapter_structure
+                        classification_data, updated_structure
                     )
                 )
+                
+                # 处理新章节创建
+                if result.create_new_chapter:
+                    new_node = self._create_new_chapter_node(
+                        result.new_chapter, updated_structure, max_level
+                    )
+                    if new_node:
+                        updated_structure.add_node(new_node)
+                        result.target_chapter_id = new_node.id
+                        logger.info(
+                            f"创建新章节: {new_node.title} (ID: {new_node.id})"
+                        )
+                
                 # 关联CQA案例到对应章节
                 self._associate_cqa_to_chapter(
-                    result, cqa_lists, chapter_structure
+                    result, cqa_lists, updated_structure
                 )
                 
                 logger.debug(
@@ -163,14 +180,15 @@ class ChapterClassificationAgent(BaseAgent, ChapterAgentMixin):
                 )
                 results.append(result)
 
-            return results
+            return results, updated_structure
 
         except Exception as e:
             logger.error(f"内容分类失败: {e}")
-            return [
+            default_results = [
                 self._create_default_classification(chapter_structure)
                 for _ in cqa_lists
             ]
+            return default_results, chapter_structure
 
     def _generate_chapter_tree_text(self, structure: ChapterStructure) -> str:
         """生成章节树文本"""
@@ -243,8 +261,8 @@ class ChapterClassificationAgent(BaseAgent, ChapterAgentMixin):
     def _create_new_chapter_node(
         self,
         chapter_info: Dict[str, Any],
-        structure: ChapterStructure,
-        max_level: int,
+        structure: ChapterStructure,  # noqa: ARG002
+        max_level: int,  # noqa: ARG002
     ) -> Optional[ChapterNode]:
         """创建新章节节点"""
         title = chapter_info.get("title", "").strip()
@@ -253,22 +271,11 @@ class ChapterClassificationAgent(BaseAgent, ChapterAgentMixin):
             return None
 
         parent_id = chapter_info.get("parent_id")
-        level = 1
-
-        # 确定层级
-        if parent_id and parent_id in structure.nodes:
-            parent_node = structure.nodes[parent_id]
-            level = min(parent_node.level + 1, max_level)
-            if level > max_level:
-                logger.warning(
-                    f"新章节层级超出限制，调整为最大层级{max_level}"
-                )
-                level = max_level
 
         return ChapterNode(
             id=str(uuid.uuid4()),
             title=title,
-            level=level,
+            level=1,  # 临时值，add_node会自动计算正确的level
             parent_id=parent_id,
             description=chapter_info.get("description", ""),
         )

@@ -12,33 +12,36 @@ from agent_runtime.agents.base import BaseAgent
 from agent_runtime.agents.reward_agent import RewardAgent
 from agent_runtime.agents.agg_chapters_agent import AggChaptersAgent
 from agent_runtime.agents.gen_chpt_p_agent import GenChptPAgent
+from agent_runtime.agents.chapter_classification_agent import ChapterClassificationAgent
+from agent_runtime.agents.chapter_structure_agent import ChapterStructureAgent
+from agent_runtime.agents.cqa_agent import CQAAgent
+
 from agent_runtime.logging.logger import logger
 
 
 class AgentPromptInfo(BaseModel):
     """Agent提示词信息"""
+
     model_config = ConfigDict(extra="forbid", strict=True)
 
     agent_name: str = Field(..., description="Agent名称")
     system_prompt: str = Field(..., description="系统提示词")
     user_prompt_template: str = Field(..., description="用户提示词模板")
     template_variables: List[str] = Field(
-        default_factory=list,
-        description="用户模板中的变量列表"
+        default_factory=list, description="用户模板中的变量列表"
     )
 
 
 class AgentPromptUpdate(BaseModel):
     """Agent提示词更新请求"""
+
     model_config = ConfigDict(extra="forbid", strict=True)
 
     system_prompt: Optional[str] = Field(
-        None,
-        description="新的系统提示词，如果为None则不更新"
+        None, description="新的系统提示词，如果为None则不更新"
     )
     user_prompt_template: Optional[str] = Field(
-        None,
-        description="新的用户提示词模板，如果为None则不更新"
+        None, description="新的用户提示词模板，如果为None则不更新"
     )
 
 
@@ -50,6 +53,9 @@ class AgentPromptService:
         "reward_agent": RewardAgent,
         "agg_chapters_agent": AggChaptersAgent,
         "gen_chpt_p_agent": GenChptPAgent,
+        "chpt_structure_agent": ChapterStructureAgent,
+        "chpt_chassification_agent": ChapterClassificationAgent,
+        "cpa_agent": CQAAgent,
         # 可以在这里添加更多Agent映射
         # "chat_agent": ChatAgent,
         # "task_agent": TaskAgent,
@@ -77,13 +83,10 @@ class AgentPromptService:
         """
         if agent_name not in self.AGENT_CLASSES:
             raise ValueError(f"Unsupported agent: {agent_name}")
-            
+
         agent_class = self.AGENT_CLASSES[agent_name]
         # 利用BaseAgent的单例模式，相同agent_name会返回同一实例
-        agent = agent_class(
-            agent_name=agent_name,
-            llm_engine=self.llm_client
-        )
+        agent = agent_class(agent_name=agent_name, llm_engine=self.llm_client)
         logger.debug(f"Got or created agent instance: {agent_name}")
         return agent
 
@@ -109,15 +112,17 @@ class AgentPromptService:
         agent = self._get_or_create_agent(agent_name)
 
         # 获取模板变量
-        template_vars = list(agent.user_template_vars) if hasattr(
-            agent, 'user_template_vars'
-        ) else []
+        template_vars = (
+            list(agent.user_template_vars)
+            if hasattr(agent, "user_template_vars")
+            else []
+        )
 
         return AgentPromptInfo(
             agent_name=agent.agent_name,
             system_prompt=agent.system_prompt,
             user_prompt_template=agent.user_prompt_template,
-            template_variables=template_vars
+            template_variables=template_vars,
         )
 
     def get_all_agents_prompt_info(self) -> Dict[str, AgentPromptInfo]:
@@ -135,9 +140,7 @@ class AgentPromptService:
         return result
 
     def update_agent_prompts(
-        self,
-        agent_name: str,
-        update_request: AgentPromptUpdate
+        self, agent_name: str, update_request: AgentPromptUpdate
     ) -> AgentPromptInfo:
         """
         更新指定Agent的提示词
@@ -163,13 +166,10 @@ class AgentPromptService:
             agent.update_user_template(update_request.user_prompt_template)
             updated_fields.append("user_prompt_template")
 
-        logger.info(
-            f"Updated {agent_name} prompts. Fields: {updated_fields}"
-        )
+        logger.info(f"Updated {agent_name} prompts. Fields: {updated_fields}")
 
         # 返回更新后的信息
         return self.get_agent_prompt_info(agent_name)
-
 
     def reset_agent_to_default(self, agent_name: str) -> AgentPromptInfo:
         """
@@ -193,9 +193,7 @@ class AgentPromptService:
         return self.get_agent_prompt_info(agent_name)
 
     def validate_template_variables(
-        self,
-        agent_name: str,
-        test_variables: Dict[str, Any]
+        self, agent_name: str, test_variables: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
         验证模板变量是否有效
@@ -214,14 +212,16 @@ class AgentPromptService:
             "missing_variables": [],
             "extra_variables": [],
             "rendered_preview": None,
-            "error": None
+            "error": None,
         }
 
         try:
             # 检查缺失的变量
-            required_vars = agent.user_template_vars if hasattr(
-                agent, 'user_template_vars'
-            ) else set()
+            required_vars = (
+                agent.user_template_vars
+                if hasattr(agent, "user_template_vars")
+                else set()
+            )
             provided_vars = set(test_variables.keys())
 
             missing_vars = required_vars - provided_vars
@@ -238,8 +238,6 @@ class AgentPromptService:
 
         except Exception as e:
             result["error"] = str(e)
-            logger.error(
-                f"Template validation failed for {agent_name}: {e}"
-            )
+            logger.error(f"Template validation failed for {agent_name}: {e}")
 
         return result

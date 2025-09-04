@@ -22,11 +22,11 @@ class ChapterStructureAgent(BaseAgent, ChapterAgentMixin):
     DEFAULT_SYSTEM_PROMPT = """你是一个专业的内容结构组织专家，负责基于对话内容构建合理的章节目录结构。
 
 你的任务：
-- 分析多轮对话(CQA List)的主题和内容结构
+- 分析每个多轮对话片段(CQA)的主题和内容结构
 - 构建层次清晰的章节结构，层数不超过指定最大层数
 - 每个章节包含合理的标题和简短描述
 - 为每个章节分配唯一ID
-- 单个CPA 仅可以关联到唯一最相关的章节中
+- 每个多轮对话片段，仅有唯一的相关的章节
 
 
 组织原则：
@@ -139,12 +139,12 @@ class ChapterStructureAgent(BaseAgent, ChapterAgentMixin):
             node = ChapterNode(
                 id=chapter_data.get("id", str(uuid.uuid4())),
                 title=chapter_data.get("title", "未命名章节"),
-                level=min(chapter_data.get("level", 1), max_level),
+                level=1,  # 临时值，add_node会自动计算正确的level
                 parent_id=chapter_data.get("parent_id"),
                 description=chapter_data.get("description", ""),
                 related_cqa_ids=self._resolve_cqa_ids_from_indices(
                     chapter_data.get("releted_case_index", []), cqa_lists
-                )
+                ),
             )
             structure.add_node(node)
 
@@ -161,30 +161,26 @@ class ChapterStructureAgent(BaseAgent, ChapterAgentMixin):
         default_node = ChapterNode(
             id="default_chapter",
             title="通用内容",
-            level=1,
+            level=1,  # 临时值，add_node会自动计算正确的level
             description="未分类的对话内容",
         )
         structure.add_node(default_node)
 
         logger.info("使用默认章节结构")
         return structure
-    
+
     def _associate_cqa_examples(
         self, structure: ChapterStructure, cqa_lists: List[CQAList]
     ) -> None:
         """将CQA案例关联到章节结构中"""
         cqa_mapping = self._create_cqa_mapping(cqa_lists)
-        
+
         # 为每个章节节点关联相应的CQA案例
         for node in structure.nodes.values():
             for cqa_id in node.related_cqa_ids:
                 if cqa_id in cqa_mapping:
                     cqa_item = cqa_mapping[cqa_id]
                     node.add_cqa_item(cqa_item)
-                    logger.debug(
-                        f"章节 {node.title} 关联了CQA案例 ID: {cqa_id}"
-                    )
-        
-        logger.info(
-            f"已关联CQA案例到章节结构，共处理{len(cqa_mapping)}个CQA案例"
-        )
+                    logger.debug(f"章节 {node.title} 关联了CQA案例 ID: {cqa_id}")
+
+        logger.info(f"已关联CQA案例到章节结构，共处理{len(cqa_mapping)}个CQA案例")
