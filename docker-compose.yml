@@ -30,7 +30,7 @@ services:
     volumes:
       - ./playground:/app/playground
     environment:
-      - AGENT_RUNTIME_API_URL=http://agent-runtime:8011
+      - AGENT_RUNTIME_API_URL=http://agent-runtime:8011/agent
     networks:
       - gbai-net
     depends_on:
