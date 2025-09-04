@@ -224,10 +224,12 @@ class ChapterClassificationAgent(BaseAgent, ChapterAgentMixin):
         # 解析失败，返回默认结果
         return [
             {
+                "index": "parse_error",
                 "target_chapter_id": "default",
                 "confidence": 0.5,
                 "reasoning": "解析失败，使用默认分类",
                 "create_new_chapter": False,
+                "new_chapter": {},  # 显式提供空字典
             }
         ]
 
@@ -237,26 +239,52 @@ class ChapterClassificationAgent(BaseAgent, ChapterAgentMixin):
         chapter_structure: ChapterStructure,
     ) -> ChapterClassificationResult:
         """构建分类结果对象"""
-        index: Any = classification_data.get("index", "")
-        target_id = classification_data.get("target_chapter_id", "default")
-        confidence = classification_data.get("confidence", 0.5)
-        reasoning = classification_data.get("reasoning", "无理由说明")
-        create_new = classification_data.get("create_new_chapter", False)
-        new_chapter = classification_data.get("new_chapter", {})
+        try:
+            # 安全地提取和转换数据
+            index = str(classification_data.get("index", "default"))
+            target_id = str(classification_data.get("target_chapter_id", "default"))
+            
+            # 安全地处理confidence
+            try:
+                confidence = float(classification_data.get("confidence", 0.5))
+                confidence = max(0.0, min(1.0, confidence))  # 限制在0-1范围内
+            except (ValueError, TypeError):
+                confidence = 0.5
+                
+            reasoning = str(classification_data.get("reasoning", "无理由说明"))
+            create_new = bool(classification_data.get("create_new_chapter", False))
+            
+            # 安全地处理new_chapter
+            new_chapter_raw = classification_data.get("new_chapter")
+            if new_chapter_raw is None or not isinstance(new_chapter_raw, dict):
+                new_chapter = {}
+            else:
+                new_chapter = dict(new_chapter_raw)  # 创建副本确保是字典
 
-        # 验证目标章节是否存在
-        if target_id not in chapter_structure.nodes and not create_new:
-            target_id = self._get_default_chapter_id(chapter_structure)
-            reasoning = f"原目标章节不存在，改为默认章节。{reasoning}"
+            # 验证目标章节是否存在
+            if target_id not in chapter_structure.nodes and not create_new:
+                target_id = self._get_default_chapter_id(chapter_structure)
+                reasoning = f"原目标章节不存在，改为默认章节。{reasoning}"
 
-        return ChapterClassificationResult(
-            index=index,
-            target_chapter_id=target_id,
-            confidence=confidence,
-            reasoning=reasoning,
-            create_new_chapter=create_new,
-            new_chapter=new_chapter,
-        )
+            return ChapterClassificationResult(
+                index=index,
+                target_chapter_id=target_id,
+                confidence=confidence,
+                reasoning=reasoning,
+                create_new_chapter=create_new,
+                new_chapter=new_chapter,
+            )
+        except Exception as e:
+            logger.error(f"构建分类结果对象失败: {e}")
+            # 返回安全的默认值
+            return ChapterClassificationResult(
+                index="error",
+                target_chapter_id=self._get_default_chapter_id(chapter_structure),
+                confidence=0.5,
+                reasoning=f"构建分类结果失败: {str(e)}",
+                create_new_chapter=False,
+                new_chapter={},
+            )
 
     def _create_new_chapter_node(
         self,
@@ -293,11 +321,12 @@ class ChapterClassificationAgent(BaseAgent, ChapterAgentMixin):
         target_id = self._get_default_chapter_id(structure)
 
         return ChapterClassificationResult(
-            index="",
+            index="default",
             target_chapter_id=target_id,
             confidence=0.5,
             reasoning="分类失败，使用默认章节",
             create_new_chapter=False,
+            new_chapter={},  # 显式提供空字典
         )
     
     def _associate_cqa_to_chapter(

@@ -26,7 +26,7 @@ class RewardAgent(BaseAgent):
     DEFAULT_SYSTEM_PROMPT = """
 你是答案一致性评审器。仅依据"目标答案"的含义来判断每个候选答案与其是否一致。
 标签定义：
-- equivalent：与目标答案事实与结论等价；措辞不同不影响含义/范围。
+- equivalent：与目标答案事实与结论等价（候选答案内容既不比目标答案多也不比目标答案少）；措辞不同不影响含义/范围。
 - partially_equivalent：主体一致，但范围/前提/时间/数量等有限定差异或缺失。
 - different：结论不同或互相矛盾。
 - unsupported：与问题或目标答案无关、空泛，或加入目标答案未支持的推断/闲聊。

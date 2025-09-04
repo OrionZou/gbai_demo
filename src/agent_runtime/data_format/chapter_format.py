@@ -1,4 +1,6 @@
 from typing import List, Dict, Any, Optional
+import json
+from pathlib import Path
 from pydantic import BaseModel, Field
 from agent_runtime.data_format.qa_format import CQAList, CQAItem
 
@@ -20,6 +22,7 @@ class ChapterNode(BaseModel):
     parent_id: Optional[str] = None
     children: List[str] = Field(default_factory=list)
     description: Optional[str] = ""
+    content: Optional[str] = ""  # 章节内容，如生成的提示词
     related_cqa_items: List[CQAItem] = Field(
         default_factory=list
     )  # 关联的CQA案例对象
@@ -74,6 +77,54 @@ class ChapterStructure(BaseModel):
     def get_node(self, node_id: str) -> Optional[ChapterNode]:
         return self.nodes.get(node_id)
 
+    def set_node_content(self, node_id: str, content: str) -> bool:
+        """为指定节点设置内容
+        
+        Args:
+            node_id: 节点ID
+            content: 要设置的内容
+            
+        Returns:
+            bool: 设置是否成功
+        """
+        if node_id in self.nodes:
+            self.nodes[node_id].content = content
+            return True
+        return False
+
+    def add_node_content(self, node_id: str, additional_content: str, separator: str = "\n\n") -> bool:
+        """为指定节点追加内容
+        
+        Args:
+            node_id: 节点ID
+            additional_content: 要追加的内容
+            separator: 内容分隔符，默认为双换行
+            
+        Returns:
+            bool: 追加是否成功
+        """
+        if node_id in self.nodes:
+            current_content = self.nodes[node_id].content or ""
+            if current_content:
+                self.nodes[node_id].content = current_content + separator + additional_content
+            else:
+                self.nodes[node_id].content = additional_content
+            return True
+        return False
+
+    def get_node_content(self, node_id: str) -> Optional[str]:
+        """获取指定节点的内容
+        
+        Args:
+            node_id: 节点ID
+            
+        Returns:
+            str: 节点内容，如果节点不存在则返回None
+        """
+        if node_id in self.nodes:
+            return self.nodes[node_id].content
+        return None
+
     def _generate_chapter_numbers(self) -> None:
         """自动生成章节编号"""
         # 重置所有章节编号
@@ -112,6 +163,7 @@ class ChapterStructure(BaseModel):
                 "title": node.title,
                 "level": node.level,
                 "description": node.description,
+                "content": node.content,
                 "related_cqa_ids": node.related_cqa_ids,
                 "children": {},
             }
@@ -144,6 +196,7 @@ class ChapterStructure(BaseModel):
                 level=1,  # 临时值，add_node会自动计算正确的level
                 parent_id=parent_id,
                 description=node_data.get("description", ""),
+                content=node_data.get("content", ""),
                 related_cqa_ids=node_data.get("related_cqa_ids", []),
             )
 
@@ -177,6 +230,13 @@ class ChapterStructure(BaseModel):
             # 显示描述
             if node.description:
                 lines.append(f"{indent}  描述: {node.description}")
+
+            # 显示章节内容
+            if node.content:
+                content_preview = node.content
+                if len(content_preview) > 100:
+                    content_preview = content_preview[:100] + "..."
+                lines.append(f"{indent}  内容: {content_preview}")
 
             # 显示关联的CQA信息
             if show_cqa_info and node.related_cqa_items:
@@ -223,6 +283,172 @@ class ChapterStructure(BaseModel):
             f"{total_cqas}个关联CQA, "
             f"最大层级: {self.max_level}"
         )
+
+    def to_json_string(self, indent: int = 2, ensure_ascii: bool = False) -> str:
+        """导出为JSON字符串
+        
+        Args:
+            indent: JSON缩进空格数，None表示紧凑格式
+            ensure_ascii: 是否确保ASCII编码，False支持中文字符
+            
+        Returns:
+            str: JSON格式的章节结构字符串
+        """
+        # 构建完整的数据结构
+        json_data = {
+            "metadata": {
+                "max_level": self.max_level,
+                "total_nodes": len(self.nodes),
+                "total_cqas": sum(len(node.related_cqa_items) for node in self.nodes.values()),
+                "root_count": len(self.root_ids)
+            },
+            "nodes": {},
+            "root_ids": self.root_ids,
+            "max_level": self.max_level
+        }
+        
+        # 序列化每个节点
+        for node_id, node in self.nodes.items():
+            json_data["nodes"][node_id] = {
+                "id": node.id,
+                "title": node.title,
+                "level": node.level,
+                "parent_id": node.parent_id,
+                "children": node.children,
+                "description": node.description,
+                "content": node.content,
+                "related_cqa_items": [
+                    {
+                        "cqa_id": cqa.cqa_id,
+                        "question": cqa.question,
+                        "answer": cqa.answer,
+                        "context": cqa.context
+                    } for cqa in node.related_cqa_items
+                ],
+                "related_cqa_ids": node.related_cqa_ids,
+                "chapter_number": node.chapter_number
+            }
+        
+        return json.dumps(json_data, indent=indent, ensure_ascii=ensure_ascii)
+
+    def save_to_json_file(self, file_path: str, indent: int = 2, ensure_ascii: bool = False) -> bool:
+        """保存章节结构到JSON文件
+        
+        Args:
+            file_path: 文件路径
+            indent: JSON缩进空格数
+            ensure_ascii: 是否确保ASCII编码
+            
+        Returns:
+            bool: 保存是否成功
+        """
+        try:
+            json_string = self.to_json_string(indent=indent, ensure_ascii=ensure_ascii)
+            
+            # 确保目录存在
+            Path(file_path).parent.mkdir(parents=True, exist_ok=True)
+            
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(json_string)
+            
+            return True
+        except Exception as e:
+            print(f"保存JSON文件失败: {e}")
+            return False
+
+    @classmethod
+    def from_json_string(cls, json_string: str) -> "ChapterStructure":
+        """从JSON字符串创建章节结构
+        
+        Args:
+            json_string: JSON格式的章节结构字符串
+            
+        Returns:
+            ChapterStructure: 章节结构对象
+            
+        Raises:
+            ValueError: JSON格式不正确
+            KeyError: 缺少必要字段
+        """
+        try:
+            data = json.loads(json_string)
+            
+            # 验证必要字段
+            if not isinstance(data, dict) or "nodes" not in data:
+                raise ValueError("JSON数据格式不正确，缺少'nodes'字段")
+            
+            max_level = data.get("max_level", 3)
+            structure = cls(max_level=max_level)
+            
+            # 第一步：创建所有节点（不设置父子关系）
+            nodes_data = data["nodes"]
+            temp_nodes = {}
+            
+            for node_id, node_data in nodes_data.items():
+                # 重建CQAItem对象
+                cqa_items = []
+                for cqa_data in node_data.get("related_cqa_items", []):
+                    from agent_runtime.data_format.qa_format import CQAItem
+                    cqa_item = CQAItem(
+                        cqa_id=cqa_data.get("cqa_id", ""),
+                        question=cqa_data.get("question", ""),
+                        answer=cqa_data.get("answer", ""),
+                        context=cqa_data.get("context", "")
+                    )
+                    cqa_items.append(cqa_item)
+                
+                node = ChapterNode(
+                    id=node_data.get("id", node_id),
+                    title=node_data.get("title", ""),
+                    level=node_data.get("level", 1),
+                    parent_id=node_data.get("parent_id"),
+                    children=node_data.get("children", []).copy(),
+                    description=node_data.get("description", ""),
+                    content=node_data.get("content", ""),
+                    related_cqa_items=cqa_items,
+                    related_cqa_ids=node_data.get("related_cqa_ids", []).copy(),
+                    chapter_number=node_data.get("chapter_number", "")
+                )
+                temp_nodes[node_id] = node
+            
+            # 第二步：设置节点关系和添加到结构中
+            structure.nodes = temp_nodes
+            structure.root_ids = data.get("root_ids", [])
+            
+            # 重新生成章节编号以确保一致性
+            structure._generate_chapter_numbers()
+            
+            return structure
+            
+        except json.JSONDecodeError as e:
+            raise ValueError(f"JSON解析失败: {e}")
+        except Exception as e:
+            raise ValueError(f"创建章节结构失败: {e}")
+
+    @classmethod
+    def load_from_json_file(cls, file_path: str) -> "ChapterStructure":
+        """从JSON文件加载章节结构
+        
+        Args:
+            file_path: JSON文件路径
+            
+        Returns:
+            ChapterStructure: 章节结构对象
+            
+        Raises:
+            FileNotFoundError: 文件不存在
+            ValueError: JSON格式不正确
+        """
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                json_string = f.read()
+            
+            return cls.from_json_string(json_string)
+            
+        except FileNotFoundError:
+            raise FileNotFoundError(f"JSON文件不存在: {file_path}")
+        except Exception as e:
+            raise ValueError(f"加载JSON文件失败: {e}")
 
 
 class ChapterResponse(BaseModel):
