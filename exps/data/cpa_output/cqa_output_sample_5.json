@@ -1,0 +1,35 @@
+{
+  "session_id": "",
+  "items": [
+    {
+      "context": "",
+      "question": "\n您好，我最近为预订中的Ava Khan进行了法定姓名更改，需要更新信息。请问可以协助我处理吗？",
+      "answer": "\n我可以协助您更新乘客信息。请提供您的用户ID以及需要更新的预订对应的预订ID。",
+      "metadata": {}
+    },
+    {
+      "context": "用户需要为乘客Ava Khan更新法定姓名信息，正在寻求协助处理预订信息更新",
+      "question": "\n好的，您的用户ID是mia_ito_4088，预订ID是JVDVOV。",
+      "answer": "\n我已查询到预订详情。您希望更新Ava Khan的姓名信息，请提供需要修改的新姓名详情。",
+      "metadata": {}
+    },
+    {
+      "context": "用户ID为mia_ito_4088，预订ID为JVDVOV，需要更新乘客Ava Khan的姓名信息",
+      "question": "\n好的，她的新法定姓名是艾娃·罗德里格斯。请确保记录中准确更新这一信息。",
+      "answer": "\n以下是更新乘客信息的详细信息：\n\n- **预订编号**：JVDVOV  \n- **需更新的乘客**：Ava Khan  \n- **新姓名**：Ava Rodriguez  \n\n请确认是否需要进行此项更新。",
+      "metadata": {}
+    },
+    {
+      "context": "预订编号JVDVOV中乘客Ava Khan需要更新姓名为Ava Rodriguez，系统已确认更新信息准确无误",
+      "question": "\n好的，您提供的所有信息均准确无误。请继续执行更新操作。",
+      "answer": "\n乘客信息已成功更新。您的预订中，Ava Khan 现更改为 Ava Rodriguez。如需其他帮助，请随时告知！",
+      "metadata": {}
+    },
+    {
+      "context": "乘客Ava Khan的姓名已成功更新为Ava Rodriguez，预订信息更新操作已完成",
+      "question": "\n感谢您的帮助。我很感激。目前就这些了。",
+      "answer": "\n不客气！如果将来还需要任何帮助，随时联系我。祝你有愉快的一天！",
+      "metadata": {}
+    }
+  ]
+}
