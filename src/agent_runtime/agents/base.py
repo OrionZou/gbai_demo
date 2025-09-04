@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Set
+from typing import Any, Set, Dict
 import threading
 from jinja2 import Template, Environment, meta
 
@@ -136,6 +136,51 @@ class BaseAgent(ABC):
         """更新对话上下文"""
         self.context = context
         logger.debug("Context updated")
+
+    def update_llm_engine(self, llm_engine: LLM) -> None:
+        """
+        更新LLM引擎
+
+        Args:
+            llm_engine: 新的LLM客户端引擎
+        """
+        self.llm_engine = llm_engine
+        logger.debug(f"LLM engine updated for agent {self.agent_name}")
+
+    @classmethod
+    def update_all_agents_llm_engine(cls, new_llm_engine: LLM) -> None:
+        """
+        更新所有已创建的Agent实例的LLM引擎
+        
+        Args:
+            new_llm_engine: 新的LLM客户端引擎
+        """
+        with cls._lock:
+            updated_count = 0
+            for agent_name, agent_instance in cls._instances.items():
+                if hasattr(agent_instance, 'update_llm_engine'):
+                    agent_instance.update_llm_engine(new_llm_engine)
+                    updated_count += 1
+            logger.info(f"Updated LLM engine for {updated_count} agent instances")
+
+    @classmethod
+    def get_all_agent_instances(cls) -> Dict[str, Any]:
+        """
+        获取所有已创建的Agent实例信息
+        
+        Returns:
+            Dict[str, Any]: Agent名称到实例信息的映射
+        """
+        with cls._lock:
+            instances_info = {}
+            for agent_name, agent_instance in cls._instances.items():
+                instances_info[agent_name] = {
+                    'class_name': agent_instance.__class__.__name__,
+                    'agent_name': agent_instance.agent_name,
+                    'llm_model': getattr(agent_instance.llm_engine, 'model', 'unknown'),
+                    'initialized': agent_name in cls._initialized
+                }
+            return instances_info
 
     @abstractmethod
     async def step(self, context: AIContext = None, **kwargs) -> Any:

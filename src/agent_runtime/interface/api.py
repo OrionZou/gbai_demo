@@ -88,6 +88,43 @@ async def get_config() -> dict:
         raise HTTPException(status_code=500, detail=f"获取配置失败: {e}")
 
 
+@router.get("/config/agents")
+async def get_agents_status() -> dict:
+    """获取所有Agent实例的状态信息"""
+    try:
+        from agent_runtime.agents.base import BaseAgent
+        
+        agent_instances_info = BaseAgent.get_all_agent_instances()
+        current_config = SettingLoader.get_llm_setting()
+        
+        return {
+            "current_llm_config": {
+                "model": current_config.model,
+                "api_key": current_config.api_key[:8] + "..." if current_config.api_key else "None",
+                "base_url": current_config.base_url,
+                "temperature": current_config.temperature
+            },
+            "total_agents": len(agent_instances_info),
+            "agent_instances": agent_instances_info,
+            "services_status": {
+                "reward_service": {
+                    "llm_model": getattr(reward_service.llm_client, 'model', 'unknown')
+                },
+                "backward_service": {
+                    "llm_model": getattr(backward_service.llm_client, 'model', 'unknown')  
+                },
+                "backward_v2_service": {
+                    "llm_model": getattr(backward_v2_service.llm_client, 'model', 'unknown')
+                },
+                "agent_prompt_service": {
+                    "llm_model": getattr(agent_prompt_service.llm_client, 'model', 'unknown')
+                }
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取Agent状态失败: {e}")
+
+
 @router.post("/config")
 async def set_config(cfg: LLMSetting = Body(
     ...,
@@ -107,19 +144,37 @@ async def set_config(cfg: LLMSetting = Body(
     },
 )) -> dict:
     """
-    设置 LLM 配置，并更新全局 llm_client backward_service 和 reward_service
+    设置 LLM 配置，并更新全局 llm_client、所有services 和所有Agent实例
     """
     try:
+        # 导入BaseAgent类用于更新所有Agent实例
+        from agent_runtime.agents.base import BaseAgent
+        
         new_cfg = SettingLoader.set_llm_setting(
             cfg.model_dump(exclude_none=True))
         global llm_client, reward_service, backward_service, backward_v2_service, agent_prompt_service
-        # 重新构建 LLM 客户端 (简化为使用默认构造函数，内部读取新的 SettingLoader 配置)
+        
+        # 重新构建 LLM 客户端
         llm_client = LLM(llm_setting=new_cfg)
+        
+        # 更新所有已存在的Agent实例的LLM引擎
+        BaseAgent.update_all_agents_llm_engine(llm_client)
+        
+        # 重新构建所有services
         reward_service = RewardService(llm_client)
         backward_service = BackwardService(llm_client)
         backward_v2_service = BackwardV2Service(llm_client)
         agent_prompt_service = AgentPromptService(llm_client)
-        return {"message": "配置已更新", "config": new_cfg.model_dump()}
+        
+        # 获取更新后的Agent实例信息
+        agent_instances_info = BaseAgent.get_all_agent_instances()
+        
+        return {
+            "message": "配置已更新，所有services和agent实例已同步更新", 
+            "config": new_cfg.model_dump(),
+            "updated_agents": len(agent_instances_info),
+            "agent_instances": agent_instances_info
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"更新配置失败: {e}")
 
