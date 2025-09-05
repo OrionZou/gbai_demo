@@ -127,6 +127,7 @@ class GenChptPAgent(BaseAgent):
             prompt_content = await self.llm_engine.ask(
                 messages=openai_messages, temperature=0.3
             )
+            working_context.add_assistant(prompt_content)
 
             logger.debug(
                 f"Generated prompt for chapter '{chapter_name}': {prompt_content[:100]}..."

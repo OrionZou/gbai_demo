@@ -36,7 +36,6 @@ class LLM():
         self.temperature: float = llm_setting.temperature
         self.top_p: float = llm_setting.top_p
         self.stream: bool = llm_setting.stream
-
         # OpenAI 客户端
         self.client = AsyncOpenAI(
             api_key=self.api_key,
@@ -82,8 +81,8 @@ class LLM():
                 delta = chunk.choices[0].delta.content or ""
                 if delta:
                     chunks.append(delta)
-                    print(delta, end="", flush=True)
-            print()
+            #         print(delta, end="", flush=True)
+            # print()
             text = "".join(chunks).strip()
             if not text:
                 raise ValueError("Empty response from streaming LLM")

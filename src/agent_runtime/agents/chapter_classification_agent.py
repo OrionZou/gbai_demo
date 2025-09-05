@@ -6,9 +6,7 @@ from agent_runtime.agents.base import BaseAgent
 from agent_runtime.agents.chapter_mixin import ChapterAgentMixin
 from agent_runtime.data_format.context_ai import AIContext
 from agent_runtime.data_format.qa_format import CQAList
-from agent_runtime.data_format.chapter_format import (
-    ChapterStructure, ChapterNode
-)
+from agent_runtime.data_format.chapter_format import ChapterStructure, ChapterNode
 from agent_runtime.logging.logger import logger
 
 
@@ -108,11 +106,17 @@ class ChapterClassificationAgent(BaseAgent, ChapterAgentMixin):
 
         user_prompt = self._render_user_prompt(**kwargs)
         temp_context.add_user_prompt(user_prompt)
-        print(f"{user_prompt}")
+        # print(f"{user_prompt}")
+        input_token = temp_context.get_current_tokens()
+        logger.info(f"context input get_current_tokens:{input_token}")
         response = await self.llm_engine.ask(temp_context.to_openai_format())
 
+        temp_context.add_assistant(response)
+        logger.info(
+            f"context output get_current_tokens:{temp_context.get_current_tokens()-input_token}"
+        )
         if context is None:
-            self.context.add_assistant(response)
+            self.reset_context()
 
         return response
 
@@ -138,9 +142,7 @@ class ChapterClassificationAgent(BaseAgent, ChapterAgentMixin):
             logger.info(f"cqa_lists len:{len(cqa_lists)}")
 
             response = await self.step(
-                chapter_tree=chapter_tree,
-                cqa_lists=cqa_lists,
-                max_level=max_level
+                chapter_tree=chapter_tree, cqa_lists=cqa_lists, max_level=max_level
             )
 
             classification_data_list: List[Dict[str, Any]] = (
@@ -149,14 +151,12 @@ class ChapterClassificationAgent(BaseAgent, ChapterAgentMixin):
 
             results = []
             updated_structure = chapter_structure
-            
+
             for i, classification_data in enumerate(classification_data_list):
-                result: ChapterClassificationResult = (
-                    self._build_classification_result(
-                        classification_data, updated_structure
-                    )
+                result: ChapterClassificationResult = self._build_classification_result(
+                    classification_data, updated_structure
                 )
-                
+
                 # 处理新章节创建
                 if result.create_new_chapter:
                     new_node = self._create_new_chapter_node(
@@ -165,15 +165,11 @@ class ChapterClassificationAgent(BaseAgent, ChapterAgentMixin):
                     if new_node:
                         updated_structure.add_node(new_node)
                         result.target_chapter_id = new_node.id
-                        logger.info(
-                            f"创建新章节: {new_node.title} (ID: {new_node.id})"
-                        )
-                
+                        logger.info(f"创建新章节: {new_node.title} (ID: {new_node.id})")
+
                 # 关联CQA案例到对应章节
-                self._associate_cqa_to_chapter(
-                    result, cqa_lists, updated_structure
-                )
-                
+                self._associate_cqa_to_chapter(result, cqa_lists, updated_structure)
+
                 logger.debug(
                     f"第{i+1}条内容分类结果: {result.target_chapter_id}, "
                     f"置信度: {result.confidence}"
@@ -199,9 +195,7 @@ class ChapterClassificationAgent(BaseAgent, ChapterAgentMixin):
                 return
 
             node: ChapterNode = structure.nodes[node_id]
-            lines.append(
-                f"{indent}- {node.title} (ID: {node.id}, 层级: {node.level})"
-            )
+            lines.append(f"{indent}- {node.title} (ID: {node.id}, 层级: {node.level})")
             if node.description:
                 lines.append(f"{indent}  描述: {node.description}")
 
@@ -213,14 +207,12 @@ class ChapterClassificationAgent(BaseAgent, ChapterAgentMixin):
 
         return "\n".join(lines)
 
-    def _parse_classification_response(
-        self, response: str
-    ) -> List[Dict[str, Any]]:
+    def _parse_classification_response(self, response: str) -> List[Dict[str, Any]]:
         """解析分类响应"""
         result = self._parse_json_array_response(response)
         if result:
             return result
-        
+
         # 解析失败，返回默认结果
         return [
             {
@@ -243,17 +235,17 @@ class ChapterClassificationAgent(BaseAgent, ChapterAgentMixin):
             # 安全地提取和转换数据
             index = str(classification_data.get("index", "default"))
             target_id = str(classification_data.get("target_chapter_id", "default"))
-            
+
             # 安全地处理confidence
             try:
                 confidence = float(classification_data.get("confidence", 0.5))
                 confidence = max(0.0, min(1.0, confidence))  # 限制在0-1范围内
             except (ValueError, TypeError):
                 confidence = 0.5
-                
+
             reasoning = str(classification_data.get("reasoning", "无理由说明"))
             create_new = bool(classification_data.get("create_new_chapter", False))
-            
+
             # 安全地处理new_chapter
             new_chapter_raw = classification_data.get("new_chapter")
             if new_chapter_raw is None or not isinstance(new_chapter_raw, dict):
@@ -328,7 +320,7 @@ class ChapterClassificationAgent(BaseAgent, ChapterAgentMixin):
             create_new_chapter=False,
             new_chapter={},  # 显式提供空字典
         )
-    
+
     def _associate_cqa_to_chapter(
         self,
         result: ChapterClassificationResult,
@@ -338,7 +330,7 @@ class ChapterClassificationAgent(BaseAgent, ChapterAgentMixin):
         """将CQA案例关联到对应章节"""
         if not result.index or not result.target_chapter_id:
             return
-        
+
         cqa_item = self._get_cqa_item_from_index(result.index, cqa_lists)
         if cqa_item and result.target_chapter_id in structure.nodes:
             target_node = structure.nodes[result.target_chapter_id]

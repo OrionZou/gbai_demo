@@ -32,7 +32,7 @@ class ChapterStructureAgent(BaseAgent, ChapterAgentMixin):
 组织原则：
 - 章节结构要逻辑清晰，层次分明
 - 同级章节内容相互独立但逻辑相关
-- 章节标题简洁明确，准确概括内容
+- 章节标题简洁明确，准确概括内容,章节标题命名应该具有显著特点，避免通用含义词汇
 - 避免过度细分，保持合理粒度
 - 严格控制层级深度不超过指定最大层数"""
 
@@ -73,23 +73,29 @@ class ChapterStructureAgent(BaseAgent, ChapterAgentMixin):
             **kwargs,
         )
 
+        
     async def step(self, context: AIContext = None, **kwargs) -> Any:
         """执行一步Agent推理"""
         temp_context = context or self.context
 
         user_prompt = self._render_user_prompt(**kwargs)
         temp_context.add_user_prompt(user_prompt)
-        print(f"{user_prompt}")
+        input_token = temp_context.get_current_tokens()
+        logger.info(f"context input get_current_tokens:{input_token}")
         response = await self.llm_engine.ask(temp_context.to_openai_format())
 
+        temp_context.add_assistant(response)
+        logger.info(
+            f"context output get_current_tokens:{temp_context.get_current_tokens()-input_token}"
+        )
         if context is None:
-            self.context.add_assistant(response)
+            self.reset_context()
 
         return response
 
-    async def build_structure(
-        self, cqa_lists: List[CQAList], max_level: int = 3
-    ) -> ChapterStructure:
+    async def build_structure(self,
+                              cqa_lists: List[CQAList],
+                              max_level: int = 3) -> ChapterStructure:
         """
         构建章节结构
 
@@ -102,12 +108,12 @@ class ChapterStructureAgent(BaseAgent, ChapterAgentMixin):
         """
         try:
             logger.info(f"cqa_lists len:{len(cqa_lists)}")
-            response = await self.step(max_level=max_level, cqa_lists=cqa_lists)
+            response = await self.step(max_level=max_level,
+                                       cqa_lists=cqa_lists)
 
             structure_data = self._parse_structure_response(response)
             chapter_structure = self._build_chapter_structure_from_data(
-                structure_data, max_level, cqa_lists
-            )
+                structure_data, max_level, cqa_lists)
 
             logger.info(f"成功构建章节结构，共{len(chapter_structure.nodes)}个章节")
             return chapter_structure
@@ -143,8 +149,7 @@ class ChapterStructureAgent(BaseAgent, ChapterAgentMixin):
                 parent_id=chapter_data.get("parent_id"),
                 description=chapter_data.get("description", ""),
                 related_cqa_ids=self._resolve_cqa_ids_from_indices(
-                    chapter_data.get("releted_case_index", []), cqa_lists
-                ),
+                    chapter_data.get("releted_case_index", []), cqa_lists),
             )
             structure.add_node(node)
 
@@ -169,9 +174,8 @@ class ChapterStructureAgent(BaseAgent, ChapterAgentMixin):
         logger.info("使用默认章节结构")
         return structure
 
-    def _associate_cqa_examples(
-        self, structure: ChapterStructure, cqa_lists: List[CQAList]
-    ) -> None:
+    def _associate_cqa_examples(self, structure: ChapterStructure,
+                                cqa_lists: List[CQAList]) -> None:
         """将CQA案例关联到章节结构中"""
         cqa_mapping = self._create_cqa_mapping(cqa_lists)
 
