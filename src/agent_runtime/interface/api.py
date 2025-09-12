@@ -559,10 +559,37 @@ async def backward_api(req: BackwardRequest = Body(
         # 计算处理时间
         processing_time_ms = int((time.time() - start_time) * 1000)
         
+        # 返回playground期望的格式
+        chapter_structure_dict = {
+            "nodes": {},
+            "root_ids": final_structure.root_ids,
+            "max_level": final_structure.max_level
+        }
+        
+        # 序列化节点数据，保持扁平结构
+        for node_id, node in final_structure.nodes.items():
+            chapter_structure_dict["nodes"][node_id] = {
+                "id": node.id,
+                "title": node.title,
+                "level": node.level,
+                "parent_id": node.parent_id,
+                "children": node.children,
+                "description": node.description,
+                "content": node.content,
+                "related_qa_items": [
+                    {
+                        "question": qa.question,
+                        "answer": qa.answer,
+                        "metadata": qa.metadata
+                    } for qa in node.related_qa_items
+                ],
+                "chapter_number": node.chapter_number
+            }
+        
         return BackwardResponse(
             success=True,
             message=f"成功处理 {len(req.qas)} 个问答对，生成 {len(final_structure.nodes)} 个章节",
-            chapter_structure=final_structure.to_dict(),
+            chapter_structure=chapter_structure_dict,
             ospa=ospa,
             total_chapters=len(final_structure.nodes),
             total_qas=len(req.qas),

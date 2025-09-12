@@ -94,7 +94,7 @@ class BackwardService:
             final_structure = await self.chapter_structure_agent.build_structure(
                 qa_list=qa_list,
                 max_level=max_level,
-                context=self.global_context
+                # context=self.global_context
             )
             # 所有章节都是新的
             new_chapter_ids = set(final_structure.nodes.keys())

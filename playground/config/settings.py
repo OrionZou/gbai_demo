@@ -50,7 +50,6 @@ class UIConfig:
         {"name": "⚙️ LLM配置", "key": "config"},
         {"name": "🏆 Reward API", "key": "reward"},
         {"name": "↩️ Backward API", "key": "backward"},
-        {"name": "↩️ Backward V2 API", "key": "backward_v2"},
         {"name": "📊 OSPA 表格", "key": "ospa"},
         {"name": "🤖 Agent管理", "key": "agent"}
     ]

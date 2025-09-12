@@ -22,7 +22,7 @@ class ChapterStructureAgent(BaseAgent, ChapterAgentMixin):
     DEFAULT_SYSTEM_PROMPT = """你是一个专业的内容结构组织专家，负责基于对话内容构建合理的章节目录结构。
 
 你的任务：
-- 分析每个多轮对话片段(CQA)的主题和内容结构
+- 分析每个Q & A 问答对的主题和内容结构
 - 构建层次清晰的章节结构，层数不超过指定最大层数
 - 每个章节包含合理的标题和简短描述
 - 为每个章节分配唯一ID
@@ -33,7 +33,7 @@ class ChapterStructureAgent(BaseAgent, ChapterAgentMixin):
 - 章节结构要逻辑清晰，层次分明
 - 同级章节内容相互独立但逻辑相关
 - 章节标题简洁明确，准确概括内容,章节标题命名应该具有显著特点，避免通用含义词汇
-- 避免过度细分，保持合理粒度
+- 避免过度细分，保持合理粒度，每个章节的内容分布相对均匀
 - 严格控制层级深度不超过指定最大层数"""
 
     BUILD_STRUCTURE_TEMPLATE = """基于以下问答对话内容，构建一个不超过{{max_level}}层的章节目录结构：

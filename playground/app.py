@@ -21,7 +21,6 @@ from ospa_utils import OSPAProcessor
 from pages.config_page import ConfigPage
 from pages.reward_page import RewardPage
 from pages.backward_page import BackwardPage
-from pages.backward_v2_page import BackwardV2Page
 from pages.ospa_page import OSPAPage
 from pages.agent_page import AgentPage
 
@@ -104,9 +103,6 @@ class PlaygroundApp:
                 page.render()
             elif tab_key == "backward":
                 page = BackwardPage(self.service_manager)
-                page.render()
-            elif tab_key == "backward_v2":
-                page = BackwardV2Page(self.service_manager)
                 page.render()
             elif tab_key == "ospa":
                 page = OSPAPage(self.service_manager)
