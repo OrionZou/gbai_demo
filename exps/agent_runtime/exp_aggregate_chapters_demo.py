@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from agent_runtime.services.backward_service import BackwardService
 from agent_runtime.data_format.context_ai import AIContext
-from agent_runtime.clients.llm.openai_client import LLM
+from agent_runtime.clients.openai_llm_client import LLM
 
 
 def get_demo_qas_20() -> List[Tuple[str, str]]:

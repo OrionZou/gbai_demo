@@ -6,6 +6,7 @@ from openai import AsyncOpenAI, AuthenticationError, OpenAIError
 from tenacity import retry, stop_after_attempt, wait_random_exponential
 
 from agent_runtime.config.loader import LLMSetting
+
 # from agent_runtime.clients.llm.base import SingletonBase
 from agent_runtime.clients.utils import fix_json
 
@@ -14,13 +15,13 @@ from agent_runtime.logging.logger import logger
 ToolChoiceLiteral = Literal["none", "auto", "required"]
 
 
-class LLM():
+class LLM:
     # SINGLETON_KEY = "config_name"  # 按 config_name 分组单例
 
     def __init__(
-            self,
-            config_name: str = "openai",
-            llm_setting: LLMSetting = LLMSetting(),
+        self,
+        config_name: str = "openai",
+        llm_setting: LLMSetting = LLMSetting(),
     ):
         # if self._mark_initialized_once():
         #     return  # 已初始化过（同一 key 再次调用会直接返回）
@@ -44,8 +45,7 @@ class LLM():
         )
 
     # ----------------- 基础对话 -----------------
-    @retry(wait=wait_random_exponential(min=1, max=60),
-           stop=stop_after_attempt(6))
+    @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(6))
     async def ask(
         self,
         messages: List[Dict[str, Any]],
@@ -59,8 +59,9 @@ class LLM():
                     model=self.model,
                     messages=messages,
                     max_completion_tokens=self.max_completion_tokens,
-                    temperature=temperature
-                    if temperature is not None else self.temperature,
+                    temperature=(
+                        temperature if temperature is not None else self.temperature
+                    ),
                     stream=False,
                 )
                 if not rsp.choices or not rsp.choices[0].message.content:
@@ -72,8 +73,9 @@ class LLM():
                 model=self.model,
                 messages=messages,
                 max_completion_tokens=self.max_completion_tokens,
-                temperature=temperature
-                if temperature is not None else self.temperature,
+                temperature=(
+                    temperature if temperature is not None else self.temperature
+                ),
                 stream=True,
             )
             chunks: List[str] = []
@@ -103,8 +105,7 @@ class LLM():
             raise
 
     # ----------------- 工具调用 -----------------
-    @retry(wait=wait_random_exponential(min=1, max=60),
-           stop=stop_after_attempt(6))
+    @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(6))
     async def ask_tool(
         self,
         messages: List[Dict[str, Any]],
@@ -121,20 +122,20 @@ class LLM():
 
         try:
             # 如果需要 per-request timeout，可通过 with_options 临时覆盖
-            client = self.client.with_options(
-                timeout=timeout) if timeout else self.client
+            client = (
+                self.client.with_options(timeout=timeout) if timeout else self.client
+            )
             rsp = await client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                temperature=temperature
-                if temperature is not None else self.temperature,
+                temperature=(
+                    temperature if temperature is not None else self.temperature
+                ),
                 tools=tools,
-                tool_choice=
-                tool_choice  # OpenAI Python SDK 兼容 "none"/"auto"/"required"
+                tool_choice=tool_choice,  # OpenAI Python SDK 兼容 "none"/"auto"/"required"
             )
             if not rsp.choices or not rsp.choices[0].message:
-                raise ValueError(
-                    "Invalid or empty response from LLM (no message)")
+                raise ValueError("Invalid or empty response from LLM (no message)")
             return rsp.choices[0].message
 
         except ValueError as ve:
@@ -151,8 +152,7 @@ class LLM():
             raise
 
     # ------------- 结构化输出（Pydantic 解析） -------------
-    @retry(wait=wait_random_exponential(min=1, max=60),
-           stop=stop_after_attempt(6))
+    @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(6))
     async def structured_output(
         self,
         messages: List[Dict[str, Any]],
@@ -166,9 +166,11 @@ class LLM():
             rsp = await self.client.chat.completions.parse(
                 model=self.model,
                 messages=messages,
-                temperature=temperature
-                if temperature is not None else self.temperature,
-                response_format=response_format)
+                temperature=(
+                    temperature if temperature is not None else self.temperature
+                ),
+                response_format=response_format,
+            )
             parsed = rsp.choices[0].message.parsed
             if parsed is None:
                 raise ValueError("Empty parsed response from LLM")
@@ -185,8 +187,7 @@ class LLM():
             raise
 
     # ------------- 结构化输出（Pydantic 解析） -------------
-    @retry(wait=wait_random_exponential(min=1, max=60),
-           stop=stop_after_attempt(6))
+    @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(6))
     async def structured_output_old(
         self,
         messages: List[Dict[str, Any]],
@@ -200,8 +201,7 @@ class LLM():
             rsp = await self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,  # 按照 openai.ChatCompletion API 要求传入
-                temperature=self.temperature
-                if temperature is None else temperature,
+                temperature=self.temperature if temperature is None else temperature,
                 response_format={"type": "json_object"},
             )
             message = rsp.choices[0].message

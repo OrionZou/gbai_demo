@@ -3,7 +3,7 @@ from typing import Any, Set, Dict
 import threading
 from jinja2 import Template, Environment, meta
 
-from agent_runtime.clients.llm.openai_client import LLM
+from agent_runtime.clients.openai_llm_client import LLM
 from agent_runtime.data_format.context_ai import AIContext
 from agent_runtime.logging.logger import logger
 

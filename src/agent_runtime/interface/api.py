@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Body
 from pydantic import BaseModel, Field
 
 from agent_runtime.services.reward_service import RewardService, RewardRusult
-from agent_runtime.clients.llm.openai_client import LLM
+from agent_runtime.clients.openai_llm_client import LLM
 from agent_runtime.config.loader import SettingLoader, LLMSetting
 from agent_runtime.services.backward_service import BackwardService, ChapterGroup, OSPA
 from agent_runtime.services.backward_v2_service import BackwardV2Service

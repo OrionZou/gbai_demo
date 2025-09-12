@@ -13,7 +13,7 @@ import sys
 import asyncio
 from typing import List, Tuple, Optional
 
-from agent_runtime.clients.llm.openai_client import LLM
+from agent_runtime.clients.openai_llm_client import LLM
 from agent_runtime.services.backward_service import BackwardService
 
 

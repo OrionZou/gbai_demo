@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field, ConfigDict
 
 from agent_runtime.data_format.ospa import OSPA
 # from agent_runtime.data_format.qa_format import q
-from agent_runtime.clients.llm.openai_client import LLM
+from agent_runtime.clients.openai_llm_client import LLM
 from agent_runtime.clients.utils import normalize_to_list
 from agent_runtime.data_format.context_ai import AIContext
 from agent_runtime.logging.logger import logger

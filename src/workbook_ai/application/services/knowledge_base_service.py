@@ -1,7 +1,7 @@
 import uuid
 from typing import Dict, Any, List, Optional
 
-from workbook_ai.infrastructure.clients.weaviate_client import WeaviateClient
+from agent_runtime.clients.weaviate_client import WeaviateClient
 from workbook_ai.infrastructure.clients.openai_embedding_client import OpenAIEmbeddingClient
 from workbook_ai.infrastructure.logging.logger import logger
 

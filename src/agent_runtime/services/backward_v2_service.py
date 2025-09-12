@@ -1,7 +1,7 @@
 from typing import List, Optional, Dict, Any
 import asyncio
 
-from agent_runtime.clients.llm.openai_client import LLM
+from agent_runtime.clients.openai_llm_client import LLM
 from agent_runtime.agents.cqa_agent import CQAAgent
 from agent_runtime.agents.chapter_structure_agent import ChapterStructureAgent
 from agent_runtime.agents.chapter_classification_agent import ChapterClassificationAgent

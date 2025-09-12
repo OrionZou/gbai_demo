@@ -7,7 +7,7 @@ Agent Prompt Management Service
 from typing import Dict, List, Optional, Type, Any
 from pydantic import BaseModel, Field, ConfigDict
 
-from agent_runtime.clients.llm.openai_client import LLM
+from agent_runtime.clients.openai_llm_client import LLM
 from agent_runtime.agents.base import BaseAgent
 from agent_runtime.agents.reward_agent import RewardAgent
 from agent_runtime.agents.agg_chapters_agent import AggChaptersAgent

@@ -7,7 +7,7 @@ GenChptPAgent - 章节提示词生成Agent
 from typing import Optional, List, Dict, Any
 
 from agent_runtime.agents.base import BaseAgent
-from agent_runtime.clients.llm.openai_client import LLM
+from agent_runtime.clients.openai_llm_client import LLM
 from agent_runtime.data_format.context_ai import AIContext
 from agent_runtime.logging.logger import logger
 

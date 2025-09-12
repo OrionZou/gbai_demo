@@ -8,7 +8,7 @@ from typing import List, Tuple, Optional, Dict, Any
 from jinja2 import Template
 
 from agent_runtime.agents.base import BaseAgent
-from agent_runtime.clients.llm.openai_client import LLM
+from agent_runtime.clients.openai_llm_client import LLM
 from agent_runtime.data_format.context_ai import AIContext
 from agent_runtime.clients.utils import normalize_to_list
 from agent_runtime.logging.logger import logger

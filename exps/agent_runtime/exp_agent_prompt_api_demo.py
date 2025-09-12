@@ -13,7 +13,7 @@ import os
 # 添加src目录到Python路径
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
-from agent_runtime.clients.llm.openai_client import LLM
+from agent_runtime.clients.openai_llm_client import LLM
 from agent_runtime.services.agent_prompt_service import (
     AgentPromptService,
     AgentType,
