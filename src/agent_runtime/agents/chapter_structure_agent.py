@@ -1,12 +1,12 @@
 import json
 import uuid
 import re
-from typing import List, Dict, Any, Optional
+from typing import Dict, Any, Optional
 
 from agent_runtime.agents.base import BaseAgent
 from agent_runtime.agents.chapter_mixin import ChapterAgentMixin
 from agent_runtime.data_format.context import AIContext
-from agent_runtime.data_format.qa_format import CQAList
+from agent_runtime.data_format.qa_format import QAList, QAItem
 from agent_runtime.data_format.chapter_format import ChapterStructure, ChapterNode
 from agent_runtime.logging.logger import logger
 
@@ -36,21 +36,20 @@ class ChapterStructureAgent(BaseAgent, ChapterAgentMixin):
 - 避免过度细分，保持合理粒度
 - 严格控制层级深度不超过指定最大层数"""
 
-    BUILD_STRUCTURE_TEMPLATE = """基于以下多轮对话内容，构建一个不超过{{max_level}}层的章节目录结构：
+    BUILD_STRUCTURE_TEMPLATE = """基于以下问答对话内容，构建一个不超过{{max_level}}层的章节目录结构：
 
-对话内容摘要：
-{% for cqa_list in cqa_lists %}
-{% set outer_index = loop.index %}
-{% for cqa in cqa_list %}
-{{ outer_index }}-{{ loop.index }}. 
-{{ cqa }}
+问答对话内容：
+{% for qa in qa_list.items %}
+{{ loop.index }}. Q: {{ qa.question }}
+   A: {{ qa.answer }}
 {% endfor %}
-{% endfor %}
+
 要求：
-1. 分析对话的主要主题和子主题
+1. 分析问答对话的主要主题和子主题
 2. 构建层次清晰的章节结构（最大{{max_level}}层）
 3. 每个章节包含合理的标题和简短描述
 4. 为每个章节分配唯一ID
+5. 为每个章节指定相关的问答对索引
 
 请按以下JSON格式返回章节结构：
 {
@@ -61,7 +60,7 @@ class ChapterStructureAgent(BaseAgent, ChapterAgentMixin):
       "level": 1,
       "parent_id": null,
       "description": "章节描述",
-      "releted_case_index":["1-1","1-x","x-x"]
+      "related_qa_indices": [1, 2, 3]
     }
   ]
 }"""
@@ -93,13 +92,13 @@ class ChapterStructureAgent(BaseAgent, ChapterAgentMixin):
         return response
 
     async def build_structure(
-        self, cqa_lists: List[CQAList], max_level: int = 3, context: Optional[AIContext] = None
+        self, qa_list: QAList, max_level: int = 3, context: Optional[AIContext] = None
     ) -> ChapterStructure:
         """
         构建章节结构
 
         Args:
-            cqa_lists: CQA对话列表
+            qa_list: QA对话列表
             max_level: 最大目录层数
             context: AI上下文，如果为None则在step中创建
 
@@ -107,12 +106,12 @@ class ChapterStructureAgent(BaseAgent, ChapterAgentMixin):
             构建的章节结构
         """
         try:
-            logger.info(f"cqa_lists len:{len(cqa_lists)}")
-            response = await self.step(context=context, max_level=max_level, cqa_lists=cqa_lists)
+            logger.info(f"qa_list items len:{len(qa_list.items)}")
+            response = await self.step(context=context, max_level=max_level, qa_list=qa_list)
 
             structure_data = self._parse_structure_response(response)
-            chapter_structure = self._build_chapter_structure_from_data(
-                structure_data, max_level, cqa_lists
+            chapter_structure = self._build_chapter_structure_from_qa_list(
+                structure_data, max_level, qa_list
             )
 
             logger.info(f"成功构建章节结构，共{len(chapter_structure.nodes)}个章节")
@@ -127,11 +126,11 @@ class ChapterStructureAgent(BaseAgent, ChapterAgentMixin):
         result = self._parse_json_response(response)
         return result if result else {"chapters": []}
 
-    def _build_chapter_structure_from_data(
+    def _build_chapter_structure_from_qa_list(
         self,
         structure_data: Dict[str, Any],
         max_level: int,
-        cqa_lists: List[CQAList] = None,
+        qa_list: QAList,
     ) -> ChapterStructure:
         """从数据构建章节结构"""
         structure = ChapterStructure(max_level=max_level)
@@ -148,17 +147,27 @@ class ChapterStructureAgent(BaseAgent, ChapterAgentMixin):
                 level=1,  # 临时值，add_node会自动计算正确的level
                 parent_id=chapter_data.get("parent_id"),
                 description=chapter_data.get("description", ""),
-                related_cqa_ids=self._resolve_cqa_ids_from_indices(
-                    chapter_data.get("releted_case_index", []), cqa_lists
-                ),
             )
             structure.add_node(node)
-
-        # 关联CQA案例到章节结构
-        if cqa_lists:
-            self._associate_cqa_examples(structure, cqa_lists)
+            
+            # 关联QA案例到章节
+            related_indices = chapter_data.get("related_qa_indices", [])
+            self._associate_qa_to_chapter(node, related_indices, qa_list)
 
         return structure
+
+    def _associate_qa_to_chapter(self, node: ChapterNode, related_indices: list, qa_list: QAList) -> None:
+        """将QA案例关联到章节节点"""
+        for qa_index in related_indices:
+            if 1 <= qa_index <= len(qa_list.items):
+                qa_item = qa_list.items[qa_index - 1]  # 转换为0-based索引
+                # 将QA转换为CQA格式添加到节点
+                cqa_item = QAItem(
+                    question=qa_item.question,
+                    answer=qa_item.answer,
+                    metadata=qa_item.metadata
+                )
+                node.add_qa_item(cqa_item)
 
     def _create_default_structure(self, max_level: int) -> ChapterStructure:
         """创建默认章节结构"""
@@ -175,18 +184,3 @@ class ChapterStructureAgent(BaseAgent, ChapterAgentMixin):
         logger.info("使用默认章节结构")
         return structure
 
-    def _associate_cqa_examples(
-        self, structure: ChapterStructure, cqa_lists: List[CQAList]
-    ) -> None:
-        """将CQA案例关联到章节结构中"""
-        cqa_mapping = self._create_cqa_mapping(cqa_lists)
-
-        # 为每个章节节点关联相应的CQA案例
-        for node in structure.nodes.values():
-            for cqa_id in node.related_cqa_ids:
-                if cqa_id in cqa_mapping:
-                    cqa_item = cqa_mapping[cqa_id]
-                    node.add_cqa_item(cqa_item)
-                    logger.debug(f"章节 {node.title} 关联了CQA案例 ID: {cqa_id}")
-
-        logger.info(f"已关联CQA案例到章节结构，共处理{len(cqa_mapping)}个CQA案例")

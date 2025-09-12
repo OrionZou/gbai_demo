@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from agent_runtime.agents.base import BaseAgent
 from agent_runtime.agents.chapter_mixin import ChapterAgentMixin
 from agent_runtime.data_format.context import AIContext
-from agent_runtime.data_format.qa_format import CQAList
+from agent_runtime.data_format.qa_format import QAList, QAItem
 from agent_runtime.data_format.chapter_format import ChapterStructure, ChapterNode
 from agent_runtime.logging.logger import logger
 
@@ -48,36 +48,31 @@ class ChapterClassificationAgent(BaseAgent, ChapterAgentMixin):
 - 单个CPA 仅可以归类到唯一最相关的章节中
 """
 
-    CLASSIFY_CONTENT_TEMPLATE = """请将以下对话内容归类到合适的章节中，或建议创建新章节：
+    CLASSIFY_CONTENT_TEMPLATE = """请将以下问答对话归类到合适的章节中，或建议创建新章节：
 
 现有章节结构：
 {{chapter_tree}}
 
-待归类的对话内容：
-{% for cqa_list in cqa_lists %}
-{% set outer_index = loop.index %}
-{% for cqa in cqa_list %}
-{{ outer_index }}-{{ loop.index }}.
-{{ cqa }}
+待归类的问答内容：
+{% for qa in qa_list.items %}
+{{ loop.index }}. Q: {{ qa.question }}
+   A: {{ qa.answer }}
 {% endfor %}
-{% endfor %}
+
 最大层数限制：{{max_level}}
 
 要求：
-1. 分析每组对话内容的主题和性质
-2. 为每组对话找到最合适的章节进行归类
+1. 分析每个问答对的主题和性质
+2. 为每个问答对找到最合适的章节进行归类
 3. 如果现有结构不合适，建议创建新章节（不超过{{max_level}}层）
 4. 提供归类理由和置信度
 
-请按以下JSON数组格式返回归类结果（每组对话一个结果）：
+请按以下JSON数组格式返回归类结果（每个问答对一个结果）：
 
 [
-
-{% for cqa_list in cqa_lists %}
-{% set outer_index = loop.index %}
-{% for cqa in cqa_list %}
+{% for qa in qa_list.items %}
   {
-    "index": "{{ outer_index }}-{{ loop.index }}",
+    "index": {{ loop.index }},
     "target_chapter_id": "章节ID",
     "confidence": 0.85,
     "reasoning": "归类理由",
@@ -89,8 +84,7 @@ class ChapterClassificationAgent(BaseAgent, ChapterAgentMixin):
     }
   }{% if not loop.last %},{% endif %}
 {% endfor %}
-{% endfor %}
-  ]
+]
 """
 
     def __init__(self, **kwargs):
@@ -106,13 +100,13 @@ class ChapterClassificationAgent(BaseAgent, ChapterAgentMixin):
             working_context = AIContext()
         else:
             working_context = context
-        
+
         # 添加系统提示词
         working_context.add_system_prompt(self.system_prompt)
 
         user_prompt = self._render_user_prompt(**kwargs)
         working_context.add_user_prompt(user_prompt)
-        
+
         input_token = working_context.get_current_tokens()
         logger.info(f"context input get_current_tokens:{input_token}")
         response = await self.llm_engine.ask(working_context.to_openai_format())
@@ -126,28 +120,32 @@ class ChapterClassificationAgent(BaseAgent, ChapterAgentMixin):
 
     async def classify_content(
         self,
-        cqa_lists: List[CQAList],
+        qa_list: QAList,
         chapter_structure: ChapterStructure,
         max_level: int = 3,
         context: Optional[AIContext] = None,
     ) -> Tuple[List[ChapterClassificationResult], ChapterStructure]:
         """
-        将CQA内容分类到章节结构中
+        将QA内容分类到章节结构中
 
         Args:
-            cqa_lists: 待分类的CQA内容列表
+            qa_list: 待分类的QA对话列表
             chapter_structure: 现有章节结构
             max_level: 最大层数限制
+            context: AI上下文，如果为None则在step中创建
 
         Returns:
             元组：(分类结果列表, 更新后的章节结构)
         """
         try:
             chapter_tree = self._generate_chapter_tree_text(chapter_structure)
-            logger.info(f"cqa_lists len:{len(cqa_lists)}")
+            logger.info(f"qa_list items len:{len(qa_list.items)}")
 
             response = await self.step(
-                context=context, chapter_tree=chapter_tree, cqa_lists=cqa_lists, max_level=max_level
+                context=context,
+                chapter_tree=chapter_tree,
+                qa_list=qa_list,
+                max_level=max_level,
             )
 
             classification_data_list: List[Dict[str, Any]] = (
@@ -172,8 +170,8 @@ class ChapterClassificationAgent(BaseAgent, ChapterAgentMixin):
                         result.target_chapter_id = new_node.id
                         logger.info(f"创建新章节: {new_node.title} (ID: {new_node.id})")
 
-                # 关联CQA案例到对应章节
-                self._associate_cqa_to_chapter(result, cqa_lists, updated_structure)
+                # 关联QA案例到对应章节
+                self._associate_qa_to_chapter(result, qa_list, updated_structure)
 
                 logger.debug(
                     f"第{i+1}条内容分类结果: {result.target_chapter_id}, "
@@ -187,7 +185,7 @@ class ChapterClassificationAgent(BaseAgent, ChapterAgentMixin):
             logger.error(f"内容分类失败: {e}")
             default_results = [
                 self._create_default_classification(chapter_structure)
-                for _ in cqa_lists
+                for _ in qa_list.items
             ]
             return default_results, chapter_structure
 
@@ -326,21 +324,36 @@ class ChapterClassificationAgent(BaseAgent, ChapterAgentMixin):
             new_chapter={},  # 显式提供空字典
         )
 
-    def _associate_cqa_to_chapter(
+    def _associate_qa_to_chapter(
         self,
         result: ChapterClassificationResult,
-        cqa_lists: List[CQAList],
+        qa_list: QAList,
         structure: ChapterStructure,
     ) -> None:
-        """将CQA案例关联到对应章节"""
+        """将QA案例关联到对应章节"""
         if not result.index or not result.target_chapter_id:
             return
 
-        cqa_item = self._get_cqa_item_from_index(result.index, cqa_lists)
-        if cqa_item and result.target_chapter_id in structure.nodes:
-            target_node = structure.nodes[result.target_chapter_id]
-            target_node.add_cqa_item(cqa_item)
-            logger.debug(
-                f"将CQA案例 {result.index} (ID: {cqa_item.cqa_id}) "
-                f"关联到章节 {target_node.title}"
-            )
+        # 获取QA项并转换为CQA格式
+        try:
+            qa_index = int(result.index) - 1  # 转换为0-based索引
+            if 0 <= qa_index < len(qa_list.items):
+                qa_item = qa_list.items[qa_index]
+
+                if result.target_chapter_id in structure.nodes:
+                    target_node = structure.nodes[result.target_chapter_id]
+
+                    # 将QA转换为CQA格式添加到节点
+                    from agent_runtime.data_format.qa_format import CQAItem
+
+                    cqa_item = QAItem(
+                        question=qa_item.question,
+                        answer=qa_item.answer,
+                        metadata=qa_item.metadata,
+                    )
+                    target_node.add_qa_item(cqa_item)
+                    logger.debug(
+                        f"将QA案例 {result.index} 关联到章节 {target_node.title}"
+                    )
+        except (ValueError, IndexError) as e:
+            logger.warning(f"无法关联QA案例 {result.index}: {e}")

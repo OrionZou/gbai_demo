@@ -2,14 +2,14 @@ from typing import List, Dict, Any, Optional
 import json
 from pathlib import Path
 from pydantic import BaseModel, Field
-from agent_runtime.data_format.qa_format import CQAList, CQAItem
+from agent_runtime.data_format.qa_format import QAList, QAItem
 
 
 class ChapterRequest(BaseModel):
     """章节构建请求"""
 
     existing_chapters: Optional[Dict[str, Any]] = None  # 已有章节目录字典
-    cqa_lists: List[CQAList]  # CQA对话列表
+    qa_lists: List[QAList]  # QA对话列表
     max_level: int = 3  # 最大目录层数
 
 
@@ -23,23 +23,20 @@ class ChapterNode(BaseModel):
     children: List[str] = Field(default_factory=list)
     description: Optional[str] = ""
     content: Optional[str] = ""  # 章节内容，如生成的提示词
-    related_cqa_items: List[CQAItem] = Field(
+    related_qa_items: List[QAItem] = Field(
         default_factory=list
-    )  # 关联的CQA案例对象
-    related_cqa_ids: List[str] = Field(default_factory=list)  # 关联的CQA案例ID
+    )  # 关联的QA案例对象
     chapter_number: str = ""  # 章节编号，如 "1.", "1.1", "2.1.1"
 
     def add_child(self, child_id: str) -> None:
         if child_id not in self.children:
             self.children.append(child_id)
 
-    def add_cqa_item(self, cqa_item: CQAItem) -> None:
-        """添加CQA案例对象"""
-        if cqa_item not in self.related_cqa_items:
-            self.related_cqa_items.append(cqa_item)
-            # 同时添加CQA ID
-            if cqa_item.cqa_id not in self.related_cqa_ids:
-                self.related_cqa_ids.append(cqa_item.cqa_id)
+    def add_qa_item(self, qa_item: QAItem) -> None:
+        """添加QA案例对象"""
+        if qa_item not in self.related_qa_items:
+            self.related_qa_items.append(qa_item)
+
 
 
 class ChapterStructure(BaseModel):
@@ -164,7 +161,6 @@ class ChapterStructure(BaseModel):
                 "level": node.level,
                 "description": node.description,
                 "content": node.content,
-                "related_cqa_ids": node.related_cqa_ids,
                 "children": {},
             }
 
@@ -197,7 +193,6 @@ class ChapterStructure(BaseModel):
                 parent_id=parent_id,
                 description=node_data.get("description", ""),
                 content=node_data.get("content", ""),
-                related_cqa_ids=node_data.get("related_cqa_ids", []),
             )
 
             structure.add_node(node)
@@ -238,19 +233,19 @@ class ChapterStructure(BaseModel):
                     content_preview = content_preview[:100] + "..."
                 lines.append(f"{indent}  内容: {content_preview}")
 
-            # 显示关联的CQA信息
-            if show_cqa_info and node.related_cqa_items:
-                cqa_count = len(node.related_cqa_items)
-                lines.append(f"{indent}  关联CQA: {cqa_count}个")
-                for i, cqa_item in enumerate(node.related_cqa_items[:3], 1):
-                    question = cqa_item.question
+            # 显示关联的QA信息
+            if show_cqa_info and node.related_qa_items:
+                qa_count = len(node.related_qa_items)
+                lines.append(f"{indent}  关联QA: {qa_count}个")
+                for i, qa_item in enumerate(node.related_qa_items[:3], 1):
+                    question = qa_item.question
                     if len(question) > 50:
                         question_preview = question[:50] + "..."
                     else:
                         question_preview = question
                     lines.append(f"{indent}    {i}. {question_preview}")
-                if len(node.related_cqa_items) > 3:
-                    remaining = len(node.related_cqa_items) - 3
+                if len(node.related_qa_items) > 3:
+                    remaining = len(node.related_qa_items) - 3
                     lines.append(f"{indent}    ... 还有 {remaining} 个")
 
             # 递归显示子节点
@@ -274,13 +269,13 @@ class ChapterStructure(BaseModel):
     def get_summary(self) -> str:
         """获取章节结构摘要"""
         total_nodes = len(self.nodes)
-        total_cqas = sum(
-            len(node.related_cqa_items) for node in self.nodes.values()
+        total_qas = sum(
+            len(node.related_qa_items) for node in self.nodes.values()
         )
 
         return (
             f"章节结构摘要: {total_nodes}个章节, "
-            f"{total_cqas}个关联CQA, "
+            f"{total_qas}个关联QA, "
             f"最大层级: {self.max_level}"
         )
 
@@ -299,7 +294,7 @@ class ChapterStructure(BaseModel):
             "metadata": {
                 "max_level": self.max_level,
                 "total_nodes": len(self.nodes),
-                "total_cqas": sum(len(node.related_cqa_items) for node in self.nodes.values()),
+                "total_qas": sum(len(node.related_qa_items) for node in self.nodes.values()),
                 "root_count": len(self.root_ids)
             },
             "nodes": {},
@@ -317,15 +312,13 @@ class ChapterStructure(BaseModel):
                 "children": node.children,
                 "description": node.description,
                 "content": node.content,
-                "related_cqa_items": [
+                "related_qa_items": [
                     {
-                        "cqa_id": cqa.cqa_id,
-                        "question": cqa.question,
-                        "answer": cqa.answer,
-                        "context": cqa.context
-                    } for cqa in node.related_cqa_items
+                        "question": qa.question,
+                        "answer": qa.answer,
+                        "metadata": qa.metadata
+                    } for qa in node.related_qa_items
                 ],
-                "related_cqa_ids": node.related_cqa_ids,
                 "chapter_number": node.chapter_number
             }
         
@@ -385,17 +378,16 @@ class ChapterStructure(BaseModel):
             temp_nodes = {}
             
             for node_id, node_data in nodes_data.items():
-                # 重建CQAItem对象
-                cqa_items = []
-                for cqa_data in node_data.get("related_cqa_items", []):
-                    from agent_runtime.data_format.qa_format import CQAItem
-                    cqa_item = CQAItem(
-                        cqa_id=cqa_data.get("cqa_id", ""),
-                        question=cqa_data.get("question", ""),
-                        answer=cqa_data.get("answer", ""),
-                        context=cqa_data.get("context", "")
+                # 重建QAItem对象
+                qa_items = []
+                for qa_data in node_data.get("related_qa_items", []):
+                    from agent_runtime.data_format.qa_format import QAItem
+                    qa_item = QAItem(
+                        question=qa_data.get("question", ""),
+                        answer=qa_data.get("answer", ""),
+                        metadata=qa_data.get("metadata", {})
                     )
-                    cqa_items.append(cqa_item)
+                    qa_items.append(qa_item)
                 
                 node = ChapterNode(
                     id=node_data.get("id", node_id),
@@ -405,8 +397,7 @@ class ChapterStructure(BaseModel):
                     children=node_data.get("children", []).copy(),
                     description=node_data.get("description", ""),
                     content=node_data.get("content", ""),
-                    related_cqa_items=cqa_items,
-                    related_cqa_ids=node_data.get("related_cqa_ids", []).copy(),
+                    related_qa_items=qa_items,
                     chapter_number=node_data.get("chapter_number", "")
                 )
                 temp_nodes[node_id] = node
@@ -457,5 +448,5 @@ class ChapterResponse(BaseModel):
     chapter_structure: ChapterStructure
     content_mapping: Dict[str, List[str]] = Field(
         default_factory=dict
-    )  # 节点ID到CQA ID的映射
+    )  # 节点ID到QA ID的映射
     operation_log: List[str] = Field(default_factory=list)  # 操作日志
