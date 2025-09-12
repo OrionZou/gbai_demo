@@ -7,7 +7,7 @@ from agent_runtime.data_format.ospa import OSPA
 # from agent_runtime.data_format.qa_format import q
 from agent_runtime.clients.openai_llm_client import LLM
 from agent_runtime.clients.utils import normalize_to_list
-from agent_runtime.data_format.context_ai import AIContext
+from agent_runtime.data_format.context import AIContext
 from agent_runtime.logging.logger import logger
 from agent_runtime.agents.agg_chapters_agent import AggChaptersAgent
 from agent_runtime.agents.gen_chpt_p_agent import GenChptPAgent
@@ -127,11 +127,25 @@ class BackwardService:
             llm_client (LLM): 大语言模型客户端实例
         """
         self.llm_client = llm_client
+        
+        # 初始化全局上下文
+        self.global_context = AIContext()
+        self.global_context.add_system_prompt("你是一个专业的知识处理助手，负责将问答对聚合成章节并生成专用提示词。")
+        
         # 初始化专用的Agent实例
         self.agg_chapters_agent = AggChaptersAgent(llm_engine=llm_client)
         self.gen_chpt_p_agent = GenChptPAgent(llm_engine=llm_client)
 
-        logger.info("BackwardService initialized with AggChaptersAgent and GenChptPAgent")
+        logger.info("BackwardService initialized with global context and agents")
+
+    def get_global_context(self) -> AIContext:
+        """获取全局上下文"""
+        return self.global_context
+    
+    def update_global_context(self, context: AIContext) -> None:
+        """更新全局上下文"""
+        self.global_context = context
+        logger.info("Global context updated for BackwardService")
 
     async def _aggregate_chapters(
             self,
@@ -156,8 +170,10 @@ class BackwardService:
         """
         logger.debug("Using AggChaptersAgent for chapter aggregation")
 
-        # 使用AggChaptersAgent进行章节聚合
-        json_list = await self.agg_chapters_agent.aggregate_chapters(
+        # 使用AggChaptersAgent进行章节聚合，传入全局上下文
+        context_to_use = ctx or self.global_context
+        json_list = await self.agg_chapters_agent.step(
+            context=context_to_use,
             qas=qas,
             extra_instructions=extra_instructions
         )
@@ -192,8 +208,10 @@ class BackwardService:
         """
         logger.debug(f"Using GenChptPAgent for chapter '{chapter_group.chapter_name}' prompt generation")
 
-        # 使用GenChptPAgent生成章节提示词
-        prompt_val = await self.gen_chpt_p_agent.generate_chapter_prompt(
+        # 使用GenChptPAgent生成章节提示词，传入全局上下文
+        context_to_use = ctx or self.global_context
+        prompt_val = await self.gen_chpt_p_agent.step(
+            context=context_to_use,
             chapter_name=chapter_group.chapter_name,
             qas=chapter_group.qas,
             reason=chapter_group.reason,
@@ -234,21 +252,20 @@ class BackwardService:
         """
         logger.info(f"开始反向知识处理，输入 {len(qas)} 个问答对")
 
-        # 第一步：章节聚合
-        ctx = AIContext()
+        # 第一步：章节聚合，使用全局上下文
         logger.debug("执行章节聚合...")
         agg_chapter_groups = await self._aggregate_chapters(
-            qas, extra_instructions=chapters_extra_instructions, ctx=ctx)
+            qas, extra_instructions=chapters_extra_instructions, ctx=self.global_context)
 
         logger.info(f"章节聚合完成，生成了 {len(agg_chapter_groups)} 个章节")
 
-        # 第二步：并行生成每个章节的提示词
+        # 第二步：并行生成每个章节的提示词，使用全局上下文
         logger.debug("开始为各章节生成辅助提示词...")
         tasks = [
             self._generate_chapter_prompt(
                 chapter_group,
                 extra_instructions=gen_p_extra_instructions,
-                ctx=AIContext()  # 为每个任务创建独立的上下文
+                ctx=self.global_context  # 使用全局上下文
             ) for chapter_group in agg_chapter_groups
         ]
 

@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 
 from agent_runtime.agents.base import BaseAgent
 from agent_runtime.agents.chapter_mixin import ChapterAgentMixin
-from agent_runtime.data_format.context_ai import AIContext
+from agent_runtime.data_format.context import AIContext
 from agent_runtime.data_format.qa_format import CQAList
 from agent_runtime.data_format.chapter_format import ChapterStructure, ChapterNode
 from agent_runtime.logging.logger import logger
@@ -102,21 +102,25 @@ class ChapterClassificationAgent(BaseAgent, ChapterAgentMixin):
 
     async def step(self, context: AIContext = None, **kwargs) -> Any:
         """执行一步Agent推理"""
-        temp_context = context or self.context
+        if context is None:
+            working_context = AIContext()
+        else:
+            working_context = context
+        
+        # 添加系统提示词
+        working_context.add_system_prompt(self.system_prompt)
 
         user_prompt = self._render_user_prompt(**kwargs)
-        temp_context.add_user_prompt(user_prompt)
-        # print(f"{user_prompt}")
-        input_token = temp_context.get_current_tokens()
+        working_context.add_user_prompt(user_prompt)
+        
+        input_token = working_context.get_current_tokens()
         logger.info(f"context input get_current_tokens:{input_token}")
-        response = await self.llm_engine.ask(temp_context.to_openai_format())
+        response = await self.llm_engine.ask(working_context.to_openai_format())
 
-        temp_context.add_assistant(response)
+        working_context.add_assistant(response)
         logger.info(
-            f"context output get_current_tokens:{temp_context.get_current_tokens()-input_token}"
+            f"context output get_current_tokens:{working_context.get_current_tokens()-input_token}"
         )
-        if context is None:
-            self.reset_context()
 
         return response
 
@@ -125,6 +129,7 @@ class ChapterClassificationAgent(BaseAgent, ChapterAgentMixin):
         cqa_lists: List[CQAList],
         chapter_structure: ChapterStructure,
         max_level: int = 3,
+        context: Optional[AIContext] = None,
     ) -> Tuple[List[ChapterClassificationResult], ChapterStructure]:
         """
         将CQA内容分类到章节结构中
@@ -142,7 +147,7 @@ class ChapterClassificationAgent(BaseAgent, ChapterAgentMixin):
             logger.info(f"cqa_lists len:{len(cqa_lists)}")
 
             response = await self.step(
-                chapter_tree=chapter_tree, cqa_lists=cqa_lists, max_level=max_level
+                context=context, chapter_tree=chapter_tree, cqa_lists=cqa_lists, max_level=max_level
             )
 
             classification_data_list: List[Dict[str, Any]] = (

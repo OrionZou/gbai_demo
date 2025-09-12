@@ -1,11 +1,11 @@
 import json
 import uuid
 import re
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from agent_runtime.agents.base import BaseAgent
 from agent_runtime.agents.chapter_mixin import ChapterAgentMixin
-from agent_runtime.data_format.context_ai import AIContext
+from agent_runtime.data_format.context import AIContext
 from agent_runtime.data_format.qa_format import CQAList
 from agent_runtime.data_format.chapter_format import ChapterStructure, ChapterNode
 from agent_runtime.logging.logger import logger
@@ -73,47 +73,47 @@ class ChapterStructureAgent(BaseAgent, ChapterAgentMixin):
             **kwargs,
         )
 
-        
     async def step(self, context: AIContext = None, **kwargs) -> Any:
         """执行一步Agent推理"""
-        temp_context = context or self.context
-
-        user_prompt = self._render_user_prompt(**kwargs)
-        temp_context.add_user_prompt(user_prompt)
-        input_token = temp_context.get_current_tokens()
-        logger.info(f"context input get_current_tokens:{input_token}")
-        response = await self.llm_engine.ask(temp_context.to_openai_format())
-
-        temp_context.add_assistant(response)
-        logger.info(
-            f"context output get_current_tokens:{temp_context.get_current_tokens()-input_token}"
-        )
         if context is None:
-            self.reset_context()
+            working_context = AIContext()
+        else:
+            working_context = context
+        working_context.add_system_prompt(self.system_prompt)
+        user_prompt = self._render_user_prompt(**kwargs)
+        working_context.add_user_prompt(user_prompt)
+        input_token = working_context.get_current_tokens()
+        logger.info(f"context input get_current_tokens:{input_token}")
+        response = await self.llm_engine.ask(working_context.to_openai_format())
 
+        working_context.add_assistant(response)
+        logger.info(
+            f"context output get_current_tokens:{working_context.get_current_tokens()-input_token}"
+        )
         return response
 
-    async def build_structure(self,
-                              cqa_lists: List[CQAList],
-                              max_level: int = 3) -> ChapterStructure:
+    async def build_structure(
+        self, cqa_lists: List[CQAList], max_level: int = 3, context: Optional[AIContext] = None
+    ) -> ChapterStructure:
         """
         构建章节结构
 
         Args:
             cqa_lists: CQA对话列表
             max_level: 最大目录层数
+            context: AI上下文，如果为None则在step中创建
 
         Returns:
             构建的章节结构
         """
         try:
             logger.info(f"cqa_lists len:{len(cqa_lists)}")
-            response = await self.step(max_level=max_level,
-                                       cqa_lists=cqa_lists)
+            response = await self.step(context=context, max_level=max_level, cqa_lists=cqa_lists)
 
             structure_data = self._parse_structure_response(response)
             chapter_structure = self._build_chapter_structure_from_data(
-                structure_data, max_level, cqa_lists)
+                structure_data, max_level, cqa_lists
+            )
 
             logger.info(f"成功构建章节结构，共{len(chapter_structure.nodes)}个章节")
             return chapter_structure
@@ -149,7 +149,8 @@ class ChapterStructureAgent(BaseAgent, ChapterAgentMixin):
                 parent_id=chapter_data.get("parent_id"),
                 description=chapter_data.get("description", ""),
                 related_cqa_ids=self._resolve_cqa_ids_from_indices(
-                    chapter_data.get("releted_case_index", []), cqa_lists),
+                    chapter_data.get("releted_case_index", []), cqa_lists
+                ),
             )
             structure.add_node(node)
 
@@ -174,8 +175,9 @@ class ChapterStructureAgent(BaseAgent, ChapterAgentMixin):
         logger.info("使用默认章节结构")
         return structure
 
-    def _associate_cqa_examples(self, structure: ChapterStructure,
-                                cqa_lists: List[CQAList]) -> None:
+    def _associate_cqa_examples(
+        self, structure: ChapterStructure, cqa_lists: List[CQAList]
+    ) -> None:
         """将CQA案例关联到章节结构中"""
         cqa_mapping = self._create_cqa_mapping(cqa_lists)
 

@@ -26,6 +26,11 @@ class BackwardV2Service:
     def __init__(self, llm_client: LLM = None):
         """初始化服务"""
         self.llm_client = llm_client or LLM()
+        
+        # 初始化全局上下文
+        from agent_runtime.data_format.context import AIContext
+        self.global_context = AIContext()
+        self.global_context.add_system_prompt("你是一个专业的知识结构化处理助手，负责将问答内容转换为结构化的章节和OSPA格式。")
 
         # 初始化各个 agent
         self.cqa_agent = CQAAgent(llm_engine=self.llm_client)
@@ -36,6 +41,15 @@ class BackwardV2Service:
         self.gen_chpt_p_agent = GenChptPAgent(llm_engine=self.llm_client)
 
         logger.info("BackwardV2Service 初始化完成")
+
+    def get_global_context(self):
+        """获取全局上下文"""
+        return self.global_context
+    
+    def update_global_context(self, context) -> None:
+        """更新全局上下文"""
+        self.global_context = context
+        logger.info("Global context updated for BackwardV2Service")
 
     async def process(self, request: BackwardV2Request) -> BackwardV2Response:
         """
@@ -57,7 +71,7 @@ class BackwardV2Service:
         # 创建并发任务
         async def transform_single_qa_list(i: int, qa_list: QAList) -> CQAList:
             logger.debug(f"开始处理第 {i+1} 个 QA 列表")
-            cqa_list = await self.cqa_agent.transform_qa_to_cqa(qa_list)
+            cqa_list = await self.cqa_agent.transform_qa_to_cqa(qa_list, context=self.global_context)
             logger.debug(
                 f"第 {i+1} 个 QA 列表转换完成，包含 {len(cqa_list.items)} 个 CQA"
             )
@@ -81,7 +95,7 @@ class BackwardV2Service:
             # 没有章节目录：使用 chapter_structure_agent 生成新的章节目录
             logger.info("步骤2: 使用 chapter_structure_agent 生成新的章节目录")
             chapter_structure = await self.chapter_structure_agent.build_structure(
-                cqa_lists=cqa_lists, max_level=request.max_level
+                cqa_lists=cqa_lists, max_level=request.max_level, context=self.global_context
             )
             # 所有章节都是新的
             new_chapter_ids = set(chapter_structure.nodes.keys())
@@ -98,6 +112,7 @@ class BackwardV2Service:
                     cqa_lists=cqa_lists,
                     chapter_structure=request.chapter_structure,
                     max_level=request.max_level,
+                    context=self.global_context,
                 )
             )
 
@@ -203,6 +218,7 @@ class BackwardV2Service:
                                 qas=chapter_qas,
                                 reason=node.description
                                 or f"关于{node.title}的相关内容",
+                                context=self.global_context,
                             )
                         )
                         logger.debug(f"章节 '{node.title}' 提示词生成成功")

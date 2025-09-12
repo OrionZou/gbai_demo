@@ -7,7 +7,6 @@ from tenacity import retry, stop_after_attempt, wait_random_exponential
 
 from agent_runtime.config.loader import LLMSetting
 
-# from agent_runtime.clients.llm.base import SingletonBase
 from agent_runtime.clients.utils import fix_json
 
 from agent_runtime.logging.logger import logger
