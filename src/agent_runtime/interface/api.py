@@ -12,7 +12,11 @@ from agent_runtime.data_format.ospa import OSPA
 from agent_runtime.services.agent_prompt_service import (
     AgentPromptService, AgentPromptInfo, AgentPromptUpdate
 )
+from agent_runtime.services.bqa_extract_service import BQAExtractService
 from agent_runtime.data_format.qa_format import QAItem, QAList
+from agent_runtime.data_format.bqa_extract_format import (
+    BQAExtractRequest, BQAExtractResponse
+)
 
 router = APIRouter()
 
@@ -75,6 +79,7 @@ llm_client = LLM()
 reward_service = RewardService(llm_client)
 backward_service = BackwardService(llm_client)
 agent_prompt_service = AgentPromptService(llm_client)
+bqa_extract_service = BQAExtractService(llm_client)
 
 
 @router.get("/config")
@@ -114,6 +119,9 @@ async def get_agents_status() -> dict:
                 },
                 "agent_prompt_service": {
                     "llm_model": getattr(agent_prompt_service.llm_client, 'model', 'unknown')
+                },
+                "bqa_extract_service": {
+                    "llm_model": getattr(bqa_extract_service.llm_client, 'model', 'unknown')
                 }
             }
         }
@@ -148,7 +156,7 @@ async def set_config(cfg: LLMSetting = Body(
         
         new_cfg = SettingLoader.set_llm_setting(
             cfg.model_dump(exclude_none=True))
-        global llm_client, reward_service, backward_service, agent_prompt_service
+        global llm_client, reward_service, backward_service, agent_prompt_service, bqa_extract_service
         
         # 重新构建 LLM 客户端
         llm_client = LLM(llm_setting=new_cfg)
@@ -160,6 +168,7 @@ async def set_config(cfg: LLMSetting = Body(
         reward_service = RewardService(llm_client)
         backward_service = BackwardService(llm_client)
         agent_prompt_service = AgentPromptService(llm_client)
+        bqa_extract_service = BQAExtractService(llm_client)
         
         # 获取更新后的Agent实例信息
         agent_instances_info = BaseAgent.get_all_agent_instances()
@@ -568,6 +577,7 @@ async def backward_api(req: BackwardRequest = Body(
                 "parent_id": node.parent_id,
                 "children": node.children,
                 "description": node.description,
+                "reason": node.reason,
                 "content": node.content,
                 "related_qa_items": [
                     {
@@ -775,5 +785,170 @@ async def validate_agent_template_variables(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"验证模板变量失败: {e}")
+
+
+# ======================= BQA Extract API ==========================
+
+
+@router.post("/bqa/extract", response_model=BQAExtractResponse)
+async def extract_bqa_from_conversations(request: BQAExtractRequest = Body(
+    ...,
+    openapi_examples={
+        "simple_example": {
+            "summary": "简单示例 - 多轮对话拆解",
+            "description": "将多个多轮对话拆解为独立的BQA内容",
+            "value": {
+                "qa_lists": [
+                    {
+                        "items": [
+                            {"question": "什么是Python？", "answer": "Python是一种高级编程语言"},
+                            {"question": "它有什么特点？", "answer": "Python具有简洁易读、功能强大等特点"},
+                            {"question": "如何安装它？", "answer": "可以从官网下载安装包或使用包管理器安装Python"}
+                        ],
+                        "session_id": "python_intro"
+                    },
+                    {
+                        "items": [
+                            {"question": "什么是机器学习？", "answer": "机器学习是人工智能的一个分支"},
+                            {"question": "常用算法有哪些？", "answer": "包括线性回归、决策树、神经网络等"},
+                            {"question": "怎么开始学习？", "answer": "建议先学习基础数学和编程，然后学习算法原理"}
+                        ],
+                        "session_id": "ml_intro"
+                    }
+                ],
+                "context_extraction_mode": "auto",
+                "preserve_session_info": True,
+                "max_concurrent_processing": 2
+            }
+        },
+        "minimal_mode": {
+            "summary": "最小化模式 - 只在必要时添加背景",
+            "description": "只在问题明确依赖前面内容时才添加背景信息",
+            "value": {
+                "qa_lists": [
+                    {
+                        "items": [
+                            {"question": "什么是RESTful API？", "answer": "RESTful API是一种网络应用程序的设计风格"},
+                            {"question": "它的优点是什么？", "answer": "具有简单、可扩展、无状态等优点"},
+                            {"question": "如何设计？", "answer": "需要遵循REST架构原则，使用标准HTTP方法"}
+                        ],
+                        "session_id": "api_design"
+                    }
+                ],
+                "context_extraction_mode": "minimal",
+                "preserve_session_info": True,
+                "max_concurrent_processing": 1
+            }
+        },
+        "detailed_mode": {
+            "summary": "详细模式 - 丰富的背景信息",
+            "description": "为每个问题提供详细的背景信息，确保独立理解",
+            "value": {
+                "qa_lists": [
+                    {
+                        "items": [
+                            {"question": "什么是Docker？", "answer": "Docker是一种容器化平台"},
+                            {"question": "与虚拟机有什么区别？", "answer": "Docker更轻量，共享主机内核"},
+                            {"question": "如何使用？", "answer": "通过Dockerfile定义镜像，然后运行容器"}
+                        ],
+                        "session_id": "docker_basics"
+                    }
+                ],
+                "context_extraction_mode": "detailed",
+                "preserve_session_info": True,
+                "max_concurrent_processing": 1
+            }
+        }
+    }
+)) -> BQAExtractResponse:
+    """
+    BQA拆解接口 - 将多轮对话拆解为独立内容
+
+    这个接口使用BQAAgent将多轮对话转换为带背景信息的独立问答对（BQA），
+    使得每个问答对都包含必要的背景信息，可以独立理解和使用。
+
+    主要功能：
+    1. 多轮对话分析：分析对话中问题之间的依赖关系
+    2. 背景信息提取：为需要的问题添加背景信息
+    3. 独立性转换：确保每个BQA可以独立理解
+    4. 并发处理：支持多个对话会话的并发处理
+
+    提取模式：
+    - auto: 智能判断是否需要背景信息
+    - minimal: 只在必要时添加最少的背景信息
+    - detailed: 为大部分问题提供详细的背景信息
+
+    适用场景：
+    - 知识库内容准备：将对话内容转换为可独立使用的知识条目
+    - 问答系统训练：为训练数据添加上下文信息
+    - 内容重组：将连续对话拆解为独立的信息单元
+    - 搜索索引：创建可独立搜索的内容条目
+
+    Args:
+        request: BQAExtractRequest 包含多轮对话列表和处理参数
+
+    Returns:
+        BQAExtractResponse: 包含拆解后的BQA内容和处理统计
+
+    Raises:
+        HTTPException: 当输入验证失败或处理过程中发生错误时
+    """
+    # 输入验证
+    if not request.qa_lists:
+        raise HTTPException(status_code=400, detail="对话列表不能为空")
+
+    if len(request.qa_lists) > 50:  # 设置合理的会话上限
+        raise HTTPException(status_code=400, detail="对话会话数量不能超过50个")
+
+    # 验证每个对话会话
+    total_qas = 0
+    for i, qa_list in enumerate(request.qa_lists):
+        if not qa_list.items:
+            raise HTTPException(status_code=400, detail=f"第{i+1}个对话会话不能为空")
+
+        if len(qa_list.items) > 100:  # 单个会话的QA对上限
+            raise HTTPException(status_code=400, detail=f"第{i+1}个对话会话的问答对不能超过100个")
+
+        # 验证问答对内容
+        for j, qa in enumerate(qa_list.items):
+            if not qa.question.strip():
+                raise HTTPException(status_code=400, detail=f"第{i+1}个会话第{j+1}个问题不能为空")
+            if not qa.answer.strip():
+                raise HTTPException(status_code=400, detail=f"第{i+1}个会话第{j+1}个答案不能为空")
+            if len(qa.question) > 2000:
+                raise HTTPException(status_code=400, detail=f"第{i+1}个会话第{j+1}个问题长度不能超过2000字符")
+            if len(qa.answer) > 4000:
+                raise HTTPException(status_code=400, detail=f"第{i+1}个会话第{j+1}个答案长度不能超过4000字符")
+
+        total_qas += len(qa_list.items)
+
+    if total_qas > 500:  # 总问答对数量限制
+        raise HTTPException(status_code=400, detail=f"总问答对数量不能超过500个，当前{total_qas}个")
+
+    import time
+    start_time = time.time()
+
+    try:
+        # 调用BQA拆解服务
+        response = await bqa_extract_service.extract_bqa_from_conversations(request)
+
+        # 计算总处理时间
+        total_time = int((time.time() - start_time) * 1000)
+        response.total_processing_time_ms = total_time
+
+        # 添加API调用信息到操作日志
+        response.operation_log.insert(0, f"API调用开始，处理 {len(request.qa_lists)} 个对话会话")
+        response.operation_log.append(f"API调用完成，总耗时: {total_time}ms")
+
+        return response
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"输入数据格式错误: {str(e)}")
+    except Exception as e:
+        import traceback
+        error_detail = f"BQA拆解处理失败: {str(e)}"
+        # 在开发环境中可以添加详细错误信息
+        # error_detail += f"\n{traceback.format_exc()}"
+        raise HTTPException(status_code=500, detail=error_detail)
 
 

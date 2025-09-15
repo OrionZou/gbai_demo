@@ -10,7 +10,6 @@ from pydantic import BaseModel, Field, ConfigDict
 from agent_runtime.clients.openai_llm_client import LLM
 from agent_runtime.agents.base import BaseAgent
 from agent_runtime.agents.reward_agent import RewardAgent
-from agent_runtime.agents.agg_chapters_agent import AggChaptersAgent
 from agent_runtime.agents.gen_chpt_p_agent import GenChptPAgent
 from agent_runtime.agents.chapter_classification_agent import ChapterClassificationAgent
 from agent_runtime.agents.chapter_structure_agent import ChapterStructureAgent
@@ -51,7 +50,6 @@ class AgentPromptService:
     # Agent名称到类的映射
     AGENT_CLASSES: Dict[str, Type[BaseAgent]] = {
         "reward_agent": RewardAgent,
-        "agg_chapters_agent": AggChaptersAgent,
         "gen_chpt_p_agent": GenChptPAgent,
         "chpt_structure_agent": ChapterStructureAgent,
         "chpt_chassification_agent": ChapterClassificationAgent,

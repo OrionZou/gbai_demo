@@ -24,9 +24,9 @@ class ChapterStructureAgent(BaseAgent, ChapterAgentMixin):
 你的任务：
 - 分析每个Q & A 问答对的主题和内容结构
 - 构建层次清晰的章节结构，层数不超过指定最大层数
-- 每个章节包含合理的标题和简短描述
+- 每个章节包含合理的标题、简短描述 和划分理由
 - 为每个章节分配唯一ID
-- 为每个Q & A 问答对，关联最相关的章节
+- 将每个Q & A 问答对关联到最相关的章节
 
 
 组织原则：
@@ -59,6 +59,7 @@ class ChapterStructureAgent(BaseAgent, ChapterAgentMixin):
       "title": "章节标题",
       "level": 1,
       "parent_id": null,
+      "reason": "章节划分理由",
       "description": "章节描述",
       "related_qa_indices": [1, 2, 3]
     }
@@ -115,6 +116,7 @@ class ChapterStructureAgent(BaseAgent, ChapterAgentMixin):
             )
 
             logger.info(f"成功构建章节结构，共{len(chapter_structure.nodes)}个章节")
+            logger.debug(f"chapter_structure：{chapter_structure}")
             return chapter_structure
 
         except Exception as e:
@@ -147,6 +149,7 @@ class ChapterStructureAgent(BaseAgent, ChapterAgentMixin):
                 level=1,  # 临时值，add_node会自动计算正确的level
                 parent_id=chapter_data.get("parent_id"),
                 description=chapter_data.get("description", ""),
+                reason=chapter_data.get("reason", ""),
             )
             structure.add_node(node)
             
@@ -177,6 +180,7 @@ class ChapterStructureAgent(BaseAgent, ChapterAgentMixin):
             title="通用内容",
             level=1,  # 临时值，add_node会自动计算正确的level
             description="未分类的对话内容",
+            reason="构建章节结构失败时的默认章节",
         )
         structure.add_node(default_node)
 

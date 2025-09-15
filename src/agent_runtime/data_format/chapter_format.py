@@ -22,6 +22,7 @@ class ChapterNode(BaseModel):
     parent_id: Optional[str] = None
     children: List[str] = Field(default_factory=list)
     description: Optional[str] = ""
+    reason: Optional[str] = ""
     content: Optional[str] = ""  # 章节内容，如生成的提示词
     related_qa_items: List[QAItem] = Field(
         default_factory=list
@@ -160,6 +161,7 @@ class ChapterStructure(BaseModel):
                 "title": node.title,
                 "level": node.level,
                 "description": node.description,
+                "reason": node.reason,
                 "content": node.content,
                 "children": {},
             }
@@ -220,6 +222,7 @@ class ChapterStructure(BaseModel):
                 parent_id=node_data.get("parent_id"),
                 children=node_data.get("children", []).copy() if isinstance(node_data.get("children"), list) else [],
                 description=node_data.get("description", ""),
+                reason=node_data.get("reason", ""),
                 content=node_data.get("content", ""),
                 related_qa_items=qa_items,
                 chapter_number=node_data.get("chapter_number", "")
@@ -248,6 +251,7 @@ class ChapterStructure(BaseModel):
                 level=1,  # 临时值，add_node会自动计算正确的level
                 parent_id=parent_id,
                 description=node_data.get("description", ""),
+                reason=node_data.get("reason", ""),
                 content=node_data.get("content", ""),
             )
 
@@ -281,6 +285,11 @@ class ChapterStructure(BaseModel):
             # 显示描述
             if node.description:
                 lines.append(f"{indent}  描述: {node.description}")
+            
+             # 显示理由
+            if node.reason:
+                lines.append(f"{indent}  划分理由: {node.reason}")
+
 
             # 显示章节内容
             if node.content:
@@ -367,6 +376,7 @@ class ChapterStructure(BaseModel):
                 "parent_id": node.parent_id,
                 "children": node.children,
                 "description": node.description,
+                "reason": node.reason,
                 "content": node.content,
                 "related_qa_items": [
                     {
@@ -437,7 +447,6 @@ class ChapterStructure(BaseModel):
                 # 重建QAItem对象
                 qa_items = []
                 for qa_data in node_data.get("related_qa_items", []):
-                    from agent_runtime.data_format.qa_format import QAItem
                     qa_item = QAItem(
                         question=qa_data.get("question", ""),
                         answer=qa_data.get("answer", ""),
@@ -452,6 +461,7 @@ class ChapterStructure(BaseModel):
                     parent_id=node_data.get("parent_id"),
                     children=node_data.get("children", []).copy(),
                     description=node_data.get("description", ""),
+                    reason=node_data.get("reason", ""),
                     content=node_data.get("content", ""),
                     related_qa_items=qa_items,
                     chapter_number=node_data.get("chapter_number", "")

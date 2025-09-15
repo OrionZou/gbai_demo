@@ -5,7 +5,8 @@
       "Bash(find:*)",
       "mcp__ide__getDiagnostics",
       "Bash(curl:*)",
-      "Bash(mv:*)"
+      "Bash(mv:*)",
+      "Bash(cat:*)"
     ],
     "deny": [],
     "ask": []

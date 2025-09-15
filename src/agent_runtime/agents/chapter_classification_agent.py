@@ -80,7 +80,8 @@ class ChapterClassificationAgent(BaseAgent, ChapterAgentMixin):
     "new_chapter": {
       "title": "新章节标题",
       "parent_id": "父章节ID",
-      "description": "章节描述"
+      "description": "章节描述",
+      "reason": "创建新章节的理由"
     }
   }{% if not loop.last %},{% endif %}
 {% endfor %}
@@ -301,6 +302,7 @@ class ChapterClassificationAgent(BaseAgent, ChapterAgentMixin):
             level=1,  # 临时值，add_node会自动计算正确的level
             parent_id=parent_id,
             description=chapter_info.get("description", ""),
+            reason=chapter_info.get("reason", ""),
         )
 
     def _get_default_chapter_id(self, structure: ChapterStructure) -> str:

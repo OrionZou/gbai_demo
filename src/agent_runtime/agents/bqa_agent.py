@@ -1,14 +1,14 @@
 from typing import Any, Optional
 from agent_runtime.agents.base import BaseAgent
 from agent_runtime.data_format.context import AIContext
-from agent_runtime.data_format.qa_format import QAList, CQAList
+from agent_runtime.data_format.qa_format import QAList, BQAList
 from agent_runtime.logging.logger import logger
 
 
 class BQAAgent(BaseAgent):
     """
-    上下文增强Agent，将Q&A列表转换为C&Q&A格式
-    通过分析问答之间的依赖关系，为每个Q&A提取相关的上下文信息
+    背景增强Agent，将Q&A列表转换为B&Q&A格式
+    通过分析问答之间的依赖关系，为每个Q&A提取相关的背景信息
     """
 
     DEFAULT_AGENT_NAME = "bqa_agent"
@@ -59,7 +59,7 @@ Q&A序列：
             working_context = AIContext()
         else:
             working_context = context
-        
+
         # 添加系统提示词
         working_context.add_system_prompt(self.system_prompt)
 
@@ -77,18 +77,20 @@ Q&A序列：
             logger.error(f"Context extraction failed: {e}")
             raise
 
-    async def transform_qa_to_cqa(self, qa_list: QAList, context: Optional[AIContext] = None) -> CQAList:
+    async def transform_qa_to_bqa(
+        self, qa_list: QAList, context: Optional[AIContext] = None
+    ) -> BQAList:
         """
-        将Q&A列表转换为C&Q&A列表（批量处理，一次LLM调用）
+        将Q&A列表转换为B&Q&A列表（批量处理，一次LLM调用）
 
         Args:
             qa_list: 原始Q&A列表
 
         Returns:
-            转换后的C&Q&A列表
+            转换后的B&Q&A列表
         """
         if not qa_list.items:
-            return CQAList(session_id=qa_list.session_id)
+            return BQAList(session_id=qa_list.session_id)
 
         # 构建完整的Q&A序列文本
         qa_sequence_parts = []
@@ -109,13 +111,15 @@ Q&A序列：
             for item_data in result_data:
                 index = item_data.get("index", 0)
                 # Try both old "context" and new "background" for compatibility
-                background = item_data.get("background", item_data.get("context", "")).strip()
+                background = item_data.get(
+                    "background", item_data.get("context", "")
+                ).strip()
 
                 # 使用原始数据或解析结果
                 if index < len(qa_list.items):
                     original_qa = qa_list.items[index]
-                    cqa_list.add_cqa(
-                        context=context,
+                    bqa_list.add_bqa(
+                        background=background,
                         question=original_qa.question,
                         answer=original_qa.answer,
                         metadata=original_qa.metadata,
@@ -156,21 +160,21 @@ Q&A序列：
                 if current_item:
                     results.append(current_item)
                 current_item = {"index": len(results)}
-            elif line.startswith("context:") or line.startswith('"context":'):
-                context = line.split(":", 1)[1].strip().strip('"')
-                current_item["context"] = context
+            elif line.startswith("background:") or line.startswith('"background":'):
+                background = line.split(":", 1)[1].strip().strip('"')
+                current_item["background"] = background
 
         if current_item:
             results.append(current_item)
 
         return results
 
-    def _fallback_transform(self, qa_list: QAList) -> CQAList:
+    def _fallback_transform(self, qa_list: QAList) -> BQAList:
         """降级处理方案"""
-        cqa_list = CQAList(session_id=qa_list.session_id)
+        bqa_list = BQAList(session_id=qa_list.session_id)
 
         for i, qa_item in enumerate(qa_list.items):
-            context = ""
+            background = ""
             if i > 0:
                 # 简单规则：如果问题包含指代词，使用前一个问答作为上下文
                 question_lower = qa_item.question.lower()
@@ -186,10 +190,10 @@ Q&A序列：
 
                 if any(keyword in question_lower for keyword in dependency_keywords):
                     prev_qa = qa_list.items[i - 1]
-                    context = f"前面提到：Q: {prev_qa.question} A: {prev_qa.answer}"
+                    background = f"前面提到：Q: {prev_qa.question} A: {prev_qa.answer}"
 
-            cqa_list.add_cqa(
-                context=context,
+            bqa_list.add_bqa(
+                background=background,
                 question=qa_item.question,
                 answer=qa_item.answer,
                 metadata=qa_item.metadata,
