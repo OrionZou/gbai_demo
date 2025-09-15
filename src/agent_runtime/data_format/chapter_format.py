@@ -180,7 +180,63 @@ class ChapterStructure(BaseModel):
     def from_dict(
         cls, data: Dict[str, Any], max_level: int = 3
     ) -> "ChapterStructure":
-        """从字典创建章节结构"""
+        """从字典创建章节结构，支持两种格式：
+        1. 平铺格式：{"nodes": {}, "root_ids": [], "max_level": 3}
+        2. 层次格式：{"chapter_1": {"children": {...}}}
+        """
+        # 检测数据格式
+        if "nodes" in data and "root_ids" in data:
+            # 平铺格式 - playground导出的格式
+            return cls._from_flat_dict(data, max_level)
+        else:
+            # 层次格式 - 原始格式
+            return cls._from_hierarchical_dict(data, max_level)
+
+    @classmethod
+    def _from_flat_dict(cls, data: Dict[str, Any], max_level: int = 3) -> "ChapterStructure":
+        """从平铺格式字典创建章节结构"""
+        structure = cls(max_level=data.get("max_level", max_level))
+        
+        nodes_data = data.get("nodes", {})
+        root_ids = data.get("root_ids", [])
+        
+        # 创建所有节点
+        for node_id, node_data in nodes_data.items():
+            # 重建QAItem对象
+            qa_items = []
+            for qa_data in node_data.get("related_qa_items", []):
+                from agent_runtime.data_format.qa_format import QAItem
+                qa_item = QAItem(
+                    question=qa_data.get("question", ""),
+                    answer=qa_data.get("answer", ""),
+                    metadata=qa_data.get("metadata", {})
+                )
+                qa_items.append(qa_item)
+            
+            node = ChapterNode(
+                id=node_data.get("id", node_id),
+                title=node_data.get("title", ""),
+                level=node_data.get("level", 1),
+                parent_id=node_data.get("parent_id"),
+                children=node_data.get("children", []).copy() if isinstance(node_data.get("children"), list) else [],
+                description=node_data.get("description", ""),
+                content=node_data.get("content", ""),
+                related_qa_items=qa_items,
+                chapter_number=node_data.get("chapter_number", "")
+            )
+            structure.nodes[node_id] = node
+        
+        # 设置根节点
+        structure.root_ids = root_ids
+        
+        # 重新生成章节编号以确保一致性
+        structure._generate_chapter_numbers()
+        
+        return structure
+
+    @classmethod 
+    def _from_hierarchical_dict(cls, data: Dict[str, Any], max_level: int = 3) -> "ChapterStructure":
+        """从层次格式字典创建章节结构"""
         structure = cls(max_level=max_level)
 
         def _parse_node(

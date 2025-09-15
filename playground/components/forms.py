@@ -392,7 +392,7 @@ class ConfigForm:
                 "api_key": "your_openai_api_key",
                 "model": "gpt-4",
                 "base_url": "https://api.openai.com/v1",
-                "timeout": 120.0,
+                "timeout": 600.0,
                 "max_completion_tokens": 4096,
                 "temperature": 0.0
             },

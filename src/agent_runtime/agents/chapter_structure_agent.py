@@ -26,7 +26,7 @@ class ChapterStructureAgent(BaseAgent, ChapterAgentMixin):
 - 构建层次清晰的章节结构，层数不超过指定最大层数
 - 每个章节包含合理的标题和简短描述
 - 为每个章节分配唯一ID
-- 每个多轮对话片段，仅有唯一的相关的章节
+- 为每个Q & A 问答对，关联最相关的章节
 
 
 组织原则：

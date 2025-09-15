@@ -9,10 +9,10 @@ class AppConfig:
     
     # API配置
     DEFAULT_API_URL = "http://localhost:8011/agent"
-    API_TIMEOUT = 120
+    API_TIMEOUT = 600
     
     # 并发配置
-    DEFAULT_MAX_CONCURRENT = 5
+    DEFAULT_MAX_CONCURRENT = 10
     MAX_CONCURRENT_OPTIONS = [1, 3, 5, 8, 10, 15]
     
     # 文件上传配置

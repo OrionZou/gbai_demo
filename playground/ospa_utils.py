@@ -238,9 +238,10 @@ class OSPAProcessor:
     def process_backward_generation(
             self,
             manager: OSPAManager,
-            chapters_extra_instructions: str = "",
-            gen_p_extra_instructions: str = "",
-            overwrite_mode: str = "只更新空白字段") -> Dict[str, Any]:
+            max_level: int = 3,
+            max_concurrent_llm: int = 10,
+            overwrite_mode: str = "只更新空白字段",
+            chapter_structure: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """处理状态和提示词生成"""
         valid_items = manager.get_valid_items_for_backward()
 
@@ -252,12 +253,16 @@ class OSPAProcessor:
             }
 
         try:
-            # 准备问答对数据
-            qas = [{"q": item.O, "a": item.A} for item in valid_items]
+            # 准备问答对数据 - 使用正确的格式
+            qas = [{"question": item.O, "answer": item.A} for item in valid_items]
 
-            # 调用backward服务
+            # 调用backward API - 使用正确的参数
             result = self.service_manager.backward_service.process_qas(
-                qas, chapters_extra_instructions, gen_p_extra_instructions)
+                qas,  # 第一个参数是位置参数
+                chapter_structure=chapter_structure,  # 使用传入的章节结构，None表示创建新的
+                max_level=max_level,
+                max_concurrent_llm=max_concurrent_llm
+            )
 
             # 更新管理器中的数据
             if result.get("ospa"):
@@ -266,8 +271,6 @@ class OSPAProcessor:
                 skipped_count = 0
 
                 for item in manager.items:
-                    # 记录原始数据
-
                     # 寻找匹配的生成数据 - 改进匹配逻辑
                     matched = False
                     for gen_item in generated_ospa:
@@ -290,30 +293,49 @@ class OSPAProcessor:
 
                         if exact_match or normalized_match or contains_match:
                             print(f"[DEBUG] Found match for item {item.no}: exact={exact_match}, normalized={normalized_match}, contains={contains_match}")
+                            
                             # 根据覆盖模式决定是否更新
                             if overwrite_mode == "覆盖所有字段":
-                                # 直接覆盖
+                                # 直接覆盖所有字段
                                 manager.update_item_by_no(
                                     item.no,
                                     S=gen_item.get('s', ''),
                                     p=gen_item.get('p', ''))
                                 updated_count += 1
+                                print(f"[DEBUG] Updated item {item.no} (覆盖所有字段): S='{gen_item.get('s', '')[:50]}...', p='{gen_item.get('p', '')[:50]}...'")
                             else:  # "只更新空白字段"
                                 # 只更新空白字段
                                 updates = {}
+                                
+                                # 检查S字段是否为空
                                 if not item.S.strip():
                                     updates['S'] = gen_item.get('s', '')
+                                    print(f"[DEBUG] Item {item.no} S field is empty, will update with: '{gen_item.get('s', '')[:50]}...'")
+                                else:
+                                    print(f"[DEBUG] Item {item.no} S field already has value: '{item.S[:50]}...', skipping")
+                                
+                                # 检查p字段是否为空
                                 if not item.p.strip():
                                     updates['p'] = gen_item.get('p', '')
+                                    print(f"[DEBUG] Item {item.no} p field is empty, will update with: '{gen_item.get('p', '')[:50]}...'")
+                                else:
+                                    print(f"[DEBUG] Item {item.no} p field already has value: '{item.p[:50]}...', skipping")
 
                                 if updates:
-                                    manager.update_item_by_no(
-                                        item.no, **updates)
+                                    manager.update_item_by_no(item.no, **updates)
                                     updated_count += 1
+                                    print(f"[DEBUG] Updated item {item.no} (只更新空白字段): {list(updates.keys())}")
                                 else:
                                     skipped_count += 1
+                                    print(f"[DEBUG] Skipped item {item.no} (只更新空白字段): no empty fields to update")
+                            
                             matched = True
                             break
+                    
+                    # 如果没有找到匹配项，记录调试信息
+                    if not matched:
+                        print(f"[DEBUG] No match found for item {item.no}: O='{item.O[:50]}...', A='{item.A[:50]}...'")
+                        skipped_count += 1
 
                 return {
                     'success': True,

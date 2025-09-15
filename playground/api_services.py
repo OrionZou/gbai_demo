@@ -194,7 +194,7 @@ class BackwardService(APIClient):
 
             response = requests.post(f"{self.base_url}/backward",
                                      json=backward_data,
-                                     timeout=120)
+                                     timeout=600)
 
             response.raise_for_status()
             return response.json()
