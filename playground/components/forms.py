@@ -371,6 +371,234 @@ class BackwardTestForm:
             return None
 
 
+class BQAExtractTestForm:
+    """BQA Extract API测试表单 - 多轮对话解耦"""
+
+    @staticmethod
+    def render(examples: Dict[str, Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """渲染BQA Extract测试表单"""
+        st.markdown("**功能说明**: 将多轮对话拆解为独立的背景-问题-答案格式，确保每个内容都可以独立理解")
+
+        # 示例选择
+        example_choice = st.selectbox(
+            "选择测试示例",
+            list(examples.keys()),
+            key="bqa_extract_example"
+        )
+        example = examples[example_choice]
+
+        # 对话会话处理
+        qa_lists = BQAExtractTestForm._handle_qa_lists(example)
+
+        # 处理参数
+        st.subheader("🎯 处理参数")
+        col1, col2 = st.columns(2)
+
+        with col1:
+            context_extraction_mode = st.selectbox(
+                "背景提取模式",
+                ["auto", "minimal", "detailed"],
+                index=["auto", "minimal", "detailed"].index(example.get("context_extraction_mode", "auto")),
+                help="auto: 智能判断；minimal: 最小化；detailed: 详细模式"
+            )
+
+        with col2:
+            max_concurrent_processing = st.number_input(
+                "最大并发处理数量",
+                min_value=1,
+                max_value=10,
+                value=example.get("max_concurrent_processing", 3),
+                help="同时处理的会话数量"
+            )
+
+        # 高级选项
+        with st.expander("🔧 高级选项"):
+            preserve_session_info = st.checkbox(
+                "保留会话信息",
+                value=example.get("preserve_session_info", True),
+                help="是否在输出中保留原始会话ID等信息"
+            )
+
+        # 提交按钮
+        if st.button("🚀 执行 BQA Extract 处理", type="primary", key="run_bqa_extract"):
+            if not qa_lists or all(len(qa_list) == 0 for qa_list in qa_lists):
+                st.error("请输入至少一个会话的问答对")
+                return None
+            else:
+                return {
+                    "qa_lists": qa_lists,
+                    "context_extraction_mode": context_extraction_mode,
+                    "preserve_session_info": preserve_session_info,
+                    "max_concurrent_processing": max_concurrent_processing
+                }
+
+        return None
+
+    @staticmethod
+    def _handle_qa_lists(example: Dict[str, Any]) -> List[List[Dict[str, str]]]:
+        """处理多个对话会话的问答对输入"""
+        st.subheader("💬 多轮对话会话")
+
+        # 输入方式选择
+        input_method = st.radio(
+            "输入方式",
+            ["使用示例数据", "手动输入", "CSV文件上传"],
+            key="bqa_extract_input_method",
+            horizontal=True
+        )
+
+        qa_lists = []
+
+        if input_method == "使用示例数据":
+            if example.get("qa_lists"):
+                qa_lists = example["qa_lists"]
+                st.info(f"使用示例数据: {len(qa_lists)} 个对话会话")
+                BQAExtractTestForm._show_qa_lists_preview(qa_lists)
+            else:
+                st.info("当前示例无对话数据")
+
+        elif input_method == "手动输入":
+            qa_lists = BQAExtractTestForm._handle_manual_sessions()
+
+        elif input_method == "CSV文件上传":
+            uploaded_file = st.file_uploader(
+                "上传CSV文件",
+                type=['csv'],
+                help="CSV文件应包含 'session_id', 'q', 'a' 列",
+                key="bqa_extract_csv"
+            )
+
+            if uploaded_file is not None:
+                qa_lists = BQAExtractTestForm._process_sessions_csv(uploaded_file)
+
+        return qa_lists
+
+    @staticmethod
+    def _show_qa_lists_preview(qa_lists: List[List[Dict[str, str]]], max_show: int = 3):
+        """显示多个会话的预览"""
+        for i, qa_list in enumerate(qa_lists[:max_show]):
+            with st.expander(f"会话 {i+1} - {len(qa_list)} 个问答对"):
+                for j, qa in enumerate(qa_list[:3]):
+                    st.write(f"**Q{j+1}**: {qa.get('q', qa.get('question', ''))}")
+                    st.write(f"**A{j+1}**: {qa.get('a', qa.get('answer', ''))}")
+                    if j < len(qa_list) - 1:
+                        st.markdown("---")
+                if len(qa_list) > 3:
+                    st.write(f"... 还有 {len(qa_list)-3} 个问答对")
+
+        if len(qa_lists) > max_show:
+            st.write(f"... 还有 {len(qa_lists)-max_show} 个对话会话")
+
+    @staticmethod
+    def _handle_manual_sessions() -> List[List[Dict[str, str]]]:
+        """处理手动输入的对话会话"""
+        if 'num_sessions' not in st.session_state:
+            st.session_state.num_sessions = 2
+
+        num_sessions = st.number_input(
+            "对话会话数量",
+            min_value=1,
+            max_value=5,
+            value=st.session_state.num_sessions,
+            key="bqa_extract_num_sessions"
+        )
+
+        if num_sessions != st.session_state.num_sessions:
+            st.session_state.num_sessions = num_sessions
+            st.rerun()
+
+        qa_lists = []
+        for session_idx in range(num_sessions):
+            with st.expander(f"📋 会话 {session_idx+1}"):
+                # 每个会话的问答对数量
+                session_key = f"session_{session_idx}_num_qas"
+                if session_key not in st.session_state:
+                    st.session_state[session_key] = 3
+
+                num_qas = st.number_input(
+                    f"会话 {session_idx+1} 问答对数量",
+                    min_value=1,
+                    max_value=10,
+                    value=st.session_state[session_key],
+                    key=f"num_qas_session_{session_idx}"
+                )
+
+                if num_qas != st.session_state[session_key]:
+                    st.session_state[session_key] = num_qas
+                    st.rerun()
+
+                session_qas = []
+                for qa_idx in range(num_qas):
+                    col_q, col_a = st.columns(2)
+                    with col_q:
+                        q = st.text_area(
+                            f"问题 {qa_idx+1}",
+                            key=f"q_s{session_idx}_qa{qa_idx}",
+                            height=80
+                        )
+                    with col_a:
+                        a = st.text_area(
+                            f"答案 {qa_idx+1}",
+                            key=f"a_s{session_idx}_qa{qa_idx}",
+                            height=80
+                        )
+
+                    if q.strip() and a.strip():
+                        session_qas.append({"q": q.strip(), "a": a.strip()})
+
+                if session_qas:
+                    qa_lists.append(session_qas)
+
+        return qa_lists
+
+    @staticmethod
+    def _process_sessions_csv(uploaded_file) -> List[List[Dict[str, str]]]:
+        """处理包含多个会话的CSV文件"""
+        try:
+            df = pd.read_csv(uploaded_file)
+            required_cols = ['session_id', 'q', 'a']
+
+            if not all(col in df.columns for col in required_cols):
+                st.error(f"CSV文件必须包含以下列: {', '.join(required_cols)}")
+                return []
+
+            # 按会话ID分组
+            sessions = {}
+            for _, row in df.iterrows():
+                if pd.notna(row['session_id']) and pd.notna(row['q']) and pd.notna(row['a']):
+                    session_id = str(row['session_id'])
+                    if session_id not in sessions:
+                        sessions[session_id] = []
+                    sessions[session_id].append({
+                        "q": str(row['q']),
+                        "a": str(row['a'])
+                    })
+
+            qa_lists = list(sessions.values())
+            total_qas = sum(len(qa_list) for qa_list in qa_lists)
+
+            st.success(f"✅ 成功从CSV加载 {len(qa_lists)} 个会话，共 {total_qas} 个问答对")
+
+            # 显示预览
+            preview_data = []
+            for session_id, qa_list in list(sessions.items())[:3]:
+                for i, qa in enumerate(qa_list[:2]):
+                    preview_data.append({
+                        "会话ID": session_id,
+                        "问题": qa['q'][:50] + ("..." if len(qa['q']) > 50 else ""),
+                        "答案": qa['a'][:50] + ("..." if len(qa['a']) > 50 else "")
+                    })
+
+            if preview_data:
+                st.write("**数据预览:**")
+                st.dataframe(pd.DataFrame(preview_data), use_container_width=True)
+
+            return qa_lists
+
+        except Exception as e:
+            st.error(f"CSV文件处理失败: {e}")
+            return []
+
 
 class ConfigForm:
     """配置表单"""

@@ -369,6 +369,51 @@ class LLMService(APIClient):
         return results
 
 
+class BQAExtractService(APIClient):
+    """BQA Extract API服务 - 多轮对话解耦"""
+
+    def extract_conversations(self,
+                              qa_lists: List[List[Dict[str, str]]],
+                              context_extraction_mode: str = "auto",
+                              preserve_session_info: bool = True,
+                              max_concurrent_processing: int = 3) -> Dict[str, Any]:
+        """处理多轮对话拆解为独立BQA"""
+        try:
+            # 转换qa_lists格式
+            formatted_qa_lists = []
+            for i, qa_list in enumerate(qa_lists):
+                session_qa_list = {
+                    "session_id": f"session_{i+1}",
+                    "items": []
+                }
+
+                for qa in qa_list:
+                    formatted_qa = {
+                        "question": qa.get("q", qa.get("question", "")),
+                        "answer": qa.get("a", qa.get("answer", ""))
+                    }
+                    session_qa_list["items"].append(formatted_qa)
+
+                formatted_qa_lists.append(session_qa_list)
+
+            extract_data = {
+                "qa_lists": formatted_qa_lists,
+                "context_extraction_mode": context_extraction_mode,
+                "preserve_session_info": preserve_session_info,
+                "max_concurrent_processing": max_concurrent_processing
+            }
+
+            response = requests.post(f"{self.base_url}/bqa/extract",
+                                     json=extract_data,
+                                     timeout=600)
+
+            response.raise_for_status()
+            return response.json()
+
+        except Exception as e:
+            raise Exception(f"BQA Extract API调用失败: {str(e)}")
+
+
 class ServiceManager:
     """服务管理器，统一管理所有API服务"""
 
@@ -378,6 +423,7 @@ class ServiceManager:
         self.reward_service = RewardService(base_url)
         self.backward_service = BackwardService(base_url)
         self.llm_service = LLMService(base_url)
+        self.bqa_extract_service = BQAExtractService(base_url)
 
     def check_connection(self) -> bool:
         """检查API连接状态"""
@@ -389,7 +435,8 @@ class ServiceManager:
             'config': self.config_service,
             'reward': self.reward_service,
             'backward': self.backward_service,
-            'llm': self.llm_service
+            'llm': self.llm_service,
+            'bqa_extract': self.bqa_extract_service
         }
 
 

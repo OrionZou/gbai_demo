@@ -77,7 +77,7 @@ class BackwardPage:
     
     def _render_statistics(self, result: Dict[str, Any]):
         """渲染统计信息"""
-        st.success("✅ 处理完成") if result.get("success") else st.error("❌ 处理失败")
+        st.success("✅ 处理完成")
         
         col_a, col_b, col_c, col_d = st.columns(4)
         with col_a:

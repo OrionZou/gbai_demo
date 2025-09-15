@@ -930,7 +930,7 @@ async def extract_bqa_from_conversations(request: BQAExtractRequest = Body(
 
     try:
         # 调用BQA拆解服务
-        response = await bqa_extract_service.extract_bqa_from_conversations(request)
+        response: BQAExtractResponse = await bqa_extract_service.extract_bqa_from_conversations(request)
 
         # 计算总处理时间
         total_time = int((time.time() - start_time) * 1000)
