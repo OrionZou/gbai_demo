@@ -14,7 +14,7 @@ from agent_runtime.agents.agg_chapters_agent import AggChaptersAgent
 from agent_runtime.agents.gen_chpt_p_agent import GenChptPAgent
 from agent_runtime.agents.chapter_classification_agent import ChapterClassificationAgent
 from agent_runtime.agents.chapter_structure_agent import ChapterStructureAgent
-from agent_runtime.agents.cqa_agent import CQAAgent
+from agent_runtime.agents.bqa_agent import BQAAgent
 
 from agent_runtime.logging.logger import logger
 
@@ -55,7 +55,7 @@ class AgentPromptService:
         "gen_chpt_p_agent": GenChptPAgent,
         "chpt_structure_agent": ChapterStructureAgent,
         "chpt_chassification_agent": ChapterClassificationAgent,
-        "cpa_agent": CQAAgent,
+        "bpa_agent": BQAAgent,
         # 可以在这里添加更多Agent映射
         # "chat_agent": ChatAgent,
         # "task_agent": TaskAgent,

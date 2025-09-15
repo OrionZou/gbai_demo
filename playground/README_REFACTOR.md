@@ -27,7 +27,6 @@ playground/
 │   ├── config_page.py             # LLM配置页面
 │   ├── reward_page.py             # Reward API测试页面
 │   ├── backward_page.py           # Backward API测试页面
-│   ├── backward_v2_page.py        # Backward V2 API测试页面
 │   ├── ospa_page.py              # OSPA表格管理页面
 │   └── agent_page.py             # Agent管理页面
 ├── 
@@ -58,7 +57,6 @@ playground/
 - `ConfigPage`: LLM配置管理
 - `RewardPage`: Reward API测试
 - `BackwardPage`: Backward API测试  
-- `BackwardV2Page`: Backward V2 API测试
 - `OSPAPage`: OSPA表格管理
 - `AgentPage`: Agent提示词管理
 

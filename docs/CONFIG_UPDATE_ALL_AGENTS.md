@@ -52,9 +52,6 @@ GET /agent/config/agents
     "backward_service": {
       "llm_model": "gpt-4-turbo-preview"
     },
-    "backward_v2_service": {
-      "llm_model": "gpt-4-turbo-preview"
-    },
     "agent_prompt_service": {
       "llm_model": "gpt-4-turbo-preview"
     }
@@ -140,7 +137,6 @@ async def set_config(cfg: LLMSetting) -> dict:
         # 4. 重新创建所有services
         reward_service = RewardService(llm_client)
         backward_service = BackwardService(llm_client)
-        backward_v2_service = BackwardV2Service(llm_client)
         agent_prompt_service = AgentPromptService(llm_client)
         
         # 5. 返回更新结果

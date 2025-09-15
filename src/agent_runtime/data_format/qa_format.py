@@ -11,10 +11,10 @@ class QAItem(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
-class CQAItem(BaseModel):
-    """带上下文的问答对"""
-    cqa_id: str = Field(default_factory=lambda: str(uuid.uuid4()), description="cqa唯一标识")
-    context: str
+class BQAItem(BaseModel):
+    """带背景的问答对"""
+    bqa_id: str = Field(default_factory=lambda: str(uuid.uuid4()), description="bqa唯一标识")
+    background: str
     question: str
     answer: str
     metadata: Dict[str, Any] = Field(default_factory=dict)
@@ -23,7 +23,7 @@ class CQAItem(BaseModel):
         """友好的转字符串"""
         meta_str = f"[Metadata] {self.metadata}" if self.metadata else ""
         return (
-            f"[Context] {self.context} \n"
+            f"[Background] {self.background} \n"
             f"[Question] {self.question} \n"
             f"[Answer] {self.answer} \n"
             # f"{meta_str}"
@@ -54,25 +54,25 @@ class QAList(BaseModel):
         return "\n".join(history_parts)
 
 
-class CQAList(BaseModel):
-    """带上下文的问答列表"""
+class BQAList(BaseModel):
+    """带背景的问答列表"""
 
-    items: List[CQAItem] = Field(default_factory=list)
+    items: List[BQAItem] = Field(default_factory=list)
     session_id: str = ""
 
-    def add_cqa(
+    def add_bqa(
         self,
-        context: str,
+        background: str,
         question: str,
         answer: str,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """添加带上下文的问答对"""
+        """添加带背景的问答对"""
         if metadata is None:
             metadata = {}
         self.items.append(
-            CQAItem(
-                context=context, question=question, answer=answer, metadata=metadata
+            BQAItem(
+                background=background, question=question, answer=answer, metadata=metadata
             )
         )
 
@@ -83,3 +83,8 @@ class CQAList(BaseModel):
     def __iter__(self):
         """支持迭代"""
         return iter(self.items)
+
+
+# 为了向后兼容，保留旧的CQA类名作为别名
+CQAItem = BQAItem
+CQAList = BQAList

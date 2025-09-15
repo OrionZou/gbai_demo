@@ -26,7 +26,7 @@ class ChapterClassificationResult(BaseModel):
 class ChapterClassificationAgent(BaseAgent, ChapterAgentMixin):
     """
     章节分类Agent
-    基于BaseAgent开发，专门负责将CQA内容归类到章节结构中
+    基于BaseAgent开发，专门负责将BQA内容归类到章节结构中
     """
 
     DEFAULT_AGENT_NAME = "chapter_classification_agent"
@@ -34,7 +34,7 @@ class ChapterClassificationAgent(BaseAgent, ChapterAgentMixin):
     DEFAULT_SYSTEM_PROMPT = """你是一个专业的内容分类专家，负责将对话内容合理归类到已有的章节结构中。
 
 你的任务：
-- 分析单个CQA对话内容的主题和性质
+- 分析单个QA对话内容的主题和性质
 - 在已有章节结构中找到最合适的章节进行归类
 - 如果现有结构不合适，建议创建新章节或子章节
 - 确保新章节与现有结构协调一致，不超过指定最大层数
@@ -333,8 +333,6 @@ class ChapterClassificationAgent(BaseAgent, ChapterAgentMixin):
         """将QA案例关联到对应章节"""
         if not result.index or not result.target_chapter_id:
             return
-
-        # 获取QA项并转换为CQA格式
         try:
             qa_index = int(result.index) - 1  # 转换为0-based索引
             if 0 <= qa_index < len(qa_list.items):
@@ -342,9 +340,6 @@ class ChapterClassificationAgent(BaseAgent, ChapterAgentMixin):
 
                 if result.target_chapter_id in structure.nodes:
                     target_node = structure.nodes[result.target_chapter_id]
-
-                    # 将QA转换为CQA格式添加到节点
-                    from agent_runtime.data_format.qa_format import CQAItem
 
                     cqa_item = QAItem(
                         question=qa_item.question,

@@ -5,13 +5,13 @@ from agent_runtime.data_format.qa_format import QAList, CQAList
 from agent_runtime.logging.logger import logger
 
 
-class CQAAgent(BaseAgent):
+class BQAAgent(BaseAgent):
     """
     上下文增强Agent，将Q&A列表转换为C&Q&A格式
     通过分析问答之间的依赖关系，为每个Q&A提取相关的上下文信息
     """
 
-    DEFAULT_AGENT_NAME = "cqa_agent"
+    DEFAULT_AGENT_NAME = "bqa_agent"
 
     DEFAULT_SYSTEM_PROMPT = """你是一个上下文增强专家。你的任务是分析多轮对话中的Q&A序列，识别问题之间的依赖关系，并为每个问题提取相关的上下文信息。
 
@@ -103,12 +103,13 @@ Q&A序列：
             response = await self.step(context=context, qa_sequence=qa_sequence)
             result_data = self._parse_batch_response(response)
 
-            # 构建CQA列表
-            cqa_list = CQAList(session_id=qa_list.session_id)
+            # 构建BQA列表
+            bqa_list = BQAList(session_id=qa_list.session_id)
 
             for item_data in result_data:
                 index = item_data.get("index", 0)
-                context = item_data.get("context", "").strip()
+                # Try both old "context" and new "background" for compatibility
+                background = item_data.get("background", item_data.get("context", "")).strip()
 
                 # 使用原始数据或解析结果
                 if index < len(qa_list.items):
@@ -120,7 +121,7 @@ Q&A序列：
                         metadata=original_qa.metadata,
                     )
 
-            return cqa_list
+            return bqa_list
 
         except Exception as e:
             logger.error(f"Batch context extraction failed: {e}")
@@ -194,4 +195,4 @@ Q&A序列：
                 metadata=qa_item.metadata,
             )
 
-        return cqa_list
+        return bqa_list

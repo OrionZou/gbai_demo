@@ -161,7 +161,6 @@ class ChapterStructureAgent(BaseAgent, ChapterAgentMixin):
         for qa_index in related_indices:
             if 1 <= qa_index <= len(qa_list.items):
                 qa_item = qa_list.items[qa_index - 1]  # 转换为0-based索引
-                # 将QA转换为CQA格式添加到节点
                 cqa_item = QAItem(
                     question=qa_item.question,
                     answer=qa_item.answer,
