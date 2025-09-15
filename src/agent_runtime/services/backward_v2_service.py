@@ -1,7 +1,7 @@
 from typing import List, Optional, Dict, Any
 import asyncio
 
-from agent_runtime.clients.llm.openai_client import LLM
+from agent_runtime.clients.openai_llm_client import LLM
 from agent_runtime.agents.cqa_agent import CQAAgent
 from agent_runtime.agents.chapter_structure_agent import ChapterStructureAgent
 from agent_runtime.agents.chapter_classification_agent import ChapterClassificationAgent
@@ -26,6 +26,11 @@ class BackwardV2Service:
     def __init__(self, llm_client: LLM = None):
         """初始化服务"""
         self.llm_client = llm_client or LLM()
+        
+        # 初始化全局上下文
+        from agent_runtime.data_format.context import AIContext
+        self.global_context = AIContext()
+        self.global_context.add_system_prompt("你是一个专业的知识结构化处理助手，负责将问答内容转换为结构化的章节和OSPA格式。")
 
         # 初始化各个 agent
         self.cqa_agent = CQAAgent(llm_engine=self.llm_client)
@@ -36,6 +41,15 @@ class BackwardV2Service:
         self.gen_chpt_p_agent = GenChptPAgent(llm_engine=self.llm_client)
 
         logger.info("BackwardV2Service 初始化完成")
+
+    def get_global_context(self):
+        """获取全局上下文"""
+        return self.global_context
+    
+    def update_global_context(self, context) -> None:
+        """更新全局上下文"""
+        self.global_context = context
+        logger.info("Global context updated for BackwardV2Service")
 
     async def process(self, request: BackwardV2Request) -> BackwardV2Response:
         """
@@ -57,7 +71,7 @@ class BackwardV2Service:
         # 创建并发任务
         async def transform_single_qa_list(i: int, qa_list: QAList) -> CQAList:
             logger.debug(f"开始处理第 {i+1} 个 QA 列表")
-            cqa_list = await self.cqa_agent.transform_qa_to_cqa(qa_list)
+            cqa_list = await self.cqa_agent.transform_qa_to_cqa(qa_list, context=self.global_context)
             logger.debug(
                 f"第 {i+1} 个 QA 列表转换完成，包含 {len(cqa_list.items)} 个 CQA"
             )
@@ -80,8 +94,15 @@ class BackwardV2Service:
         if request.chapter_structure is None:
             # 没有章节目录：使用 chapter_structure_agent 生成新的章节目录
             logger.info("步骤2: 使用 chapter_structure_agent 生成新的章节目录")
+            # 需要将QA列表合并为单个QAList来构建章节结构
+            from agent_runtime.data_format.qa_format import QAList, QAItem
+            merged_qa_list = QAList(session_id="merged")
+            for qa_list in request.qa_lists:
+                for qa_item in qa_list.items:
+                    merged_qa_list.add_qa(qa_item.question, qa_item.answer, qa_item.metadata)
+            
             chapter_structure = await self.chapter_structure_agent.build_structure(
-                cqa_lists=cqa_lists, max_level=request.max_level
+                qa_list=merged_qa_list, max_level=request.max_level, context=self.global_context
             )
             # 所有章节都是新的
             new_chapter_ids = set(chapter_structure.nodes.keys())
@@ -93,11 +114,19 @@ class BackwardV2Service:
             logger.info("步骤2: 使用 chapter_classification_agent 更新现有章节目录")
             existing_node_ids = set(request.chapter_structure.nodes.keys())
 
+            # 合并所有QA列表为单个QAList进行分类
+            from agent_runtime.data_format.qa_format import QAList
+            merged_qa_list = QAList(session_id="merged_for_classification")
+            for qa_list in request.qa_lists:
+                for qa_item in qa_list.items:
+                    merged_qa_list.add_qa(qa_item.question, qa_item.answer, qa_item.metadata)
+            
             classification_results, chapter_structure = (
                 await self.chapter_classification_agent.classify_content(
-                    cqa_lists=cqa_lists,
+                    qa_list=merged_qa_list,
                     chapter_structure=request.chapter_structure,
                     max_level=request.max_level,
+                    context=self.global_context,
                 )
             )
 
@@ -155,7 +184,7 @@ class BackwardV2Service:
         nodes_with_existing_prompts = []  # 已有提示词的章节
 
         for node in chapter_structure.nodes.values():
-            if not node.related_cqa_items:
+            if not node.related_qa_items:
                 continue
 
             # 确定是否需要生成新的提示词
@@ -188,11 +217,10 @@ class BackwardV2Service:
 
                     # 准备章节相关的 Q&A 数据
                     chapter_qas = []
-                    for cqa_item in node.related_cqa_items:
+                    for qa_item in node.related_qa_items:
                         qa_dict = {
-                            "question": cqa_item.question,
-                            "answer": cqa_item.answer,
-                            "context": cqa_item.context,
+                            "question": qa_item.question,
+                            "answer": qa_item.answer,
                         }
                         chapter_qas.append(qa_dict)
 
@@ -203,6 +231,7 @@ class BackwardV2Service:
                                 qas=chapter_qas,
                                 reason=node.description
                                 or f"关于{node.title}的相关内容",
+                                context=self.global_context,
                             )
                         )
                         logger.debug(f"章节 '{node.title}' 提示词生成成功")
@@ -225,13 +254,13 @@ class BackwardV2Service:
                 chapter_structure.set_node_content(node.id, chapter_prompt)
                 logger.debug(f"已将提示词保存到章节 '{node.title}' (ID: {node.id})")
 
-                # 为每个 CQA 创建 OSPA
-                for cqa_item in node.related_cqa_items:
+                # 为每个 QA 创建 OSPA
+                for qa_item in node.related_qa_items:
                     ospa = OSPA(
-                        o=cqa_item.question,  # Objective: 问题
+                        o=qa_item.question,  # Objective: 问题
                         s=f"{node.title}",  # Scenario: 章节名称作为场景
                         p=chapter_prompt,  # Prompt: 生成的章节提示词
-                        a=cqa_item.answer,  # Answer: 答案
+                        a=qa_item.answer,  # Answer: 答案
                     )
                     ospa_list.append(ospa)
 
@@ -244,13 +273,13 @@ class BackwardV2Service:
                 chapter_prompt = f"请基于{node.title}章节的知识回答问题。"
                 chapter_structure.set_node_content(node.id, chapter_prompt)
 
-            # 为每个 CQA 创建 OSPA
-            for cqa_item in node.related_cqa_items:
+            # 为每个 QA 创建 OSPA
+            for qa_item in node.related_qa_items:
                 ospa = OSPA(
-                    o=cqa_item.question,  # Objective: 问题
+                    o=qa_item.question,  # Objective: 问题
                     s=f"{node.title}",  # Scenario: 章节名称作为场景
                     p=chapter_prompt,  # Prompt: 现有的章节提示词
-                    a=cqa_item.answer,  # Answer: 答案
+                    a=qa_item.answer,  # Answer: 答案
                 )
                 ospa_list.append(ospa)
 

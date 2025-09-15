@@ -7,7 +7,7 @@ Agent Prompt Management Service
 from typing import Dict, List, Optional, Type, Any
 from pydantic import BaseModel, Field, ConfigDict
 
-from agent_runtime.clients.llm.openai_client import LLM
+from agent_runtime.clients.openai_llm_client import LLM
 from agent_runtime.agents.base import BaseAgent
 from agent_runtime.agents.reward_agent import RewardAgent
 from agent_runtime.agents.agg_chapters_agent import AggChaptersAgent
@@ -69,7 +69,22 @@ class AgentPromptService:
             llm_client: LLM客户端
         """
         self.llm_client = llm_client
-        logger.info("AgentPromptService initialized")
+        
+        # 初始化全局上下文
+        from agent_runtime.data_format.context import AIContext
+        self.global_context = AIContext()
+        self.global_context.add_system_prompt("你是一个专业的Agent提示词管理助手，负责查看、更新和验证各种Agent的系统提示词和用户提示词模板。")
+        
+        logger.info("AgentPromptService initialized with global context")
+
+    def get_global_context(self):
+        """获取全局上下文"""
+        return self.global_context
+    
+    def update_global_context(self, context) -> None:
+        """更新全局上下文"""
+        self.global_context = context
+        logger.info("Global context updated for AgentPromptService")
 
     def _get_or_create_agent(self, agent_name: str) -> BaseAgent:
         """

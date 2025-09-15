@@ -14,8 +14,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 from agent_runtime.services.backward_service import (
     BackwardService, ChapterGroup, QAItem
 )
-from agent_runtime.data_format.context_ai import AIContext
-from agent_runtime.clients.llm.openai_client import LLM
+from agent_runtime.data_format.context import AIContext
+from agent_runtime.clients.openai_llm_client import LLM
 
 
 def create_sample_chapter_groups() -> List[ChapterGroup]:

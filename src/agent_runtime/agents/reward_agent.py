@@ -8,8 +8,8 @@ import json
 from typing import Optional, List, Dict, Any
 from agent_runtime.logging.logger import logger
 from agent_runtime.agents.base import BaseAgent
-from agent_runtime.clients.llm.openai_client import LLM
-from agent_runtime.data_format.context_ai import AIContext
+from agent_runtime.clients.openai_llm_client import LLM
+from agent_runtime.data_format.context import AIContext
 from agent_runtime.clients.utils import normalize_to_list
 
 
@@ -87,13 +87,13 @@ class RewardAgent(BaseAgent):
 
         logger.info("RewardAgent initialized for answer consistency evaluation")
 
-    async def step(self, context=None, **kwargs) -> List[Dict[str, Any]]:
+    async def step(self, context: AIContext = None, **kwargs) -> List[Dict[str, Any]]:
         """
         重构的step方法，专门用于答案比较任务
         每次step都重新开始，不累积历史对话
 
         Args:
-            context: 可选的外部上下文
+            context: 可选的外部上下文，如果为None则创建临时context
             **kwargs: 包含question, target_answer, candidates等参数
 
         Returns:
@@ -101,9 +101,16 @@ class RewardAgent(BaseAgent):
         """
         # 如果没有提供外部上下文，创建一个新的临时上下文
         if context is None:
-            working_context = self.context
+            working_context = AIContext()
         else:
             working_context = context
+        
+        # 添加系统提示词
+        working_context.add_system_prompt(self.system_prompt)
+        
+        # 渲染并添加用户提示词
+        rendered_prompt = self._render_user_prompt(**kwargs)
+        working_context.add_user_prompt(rendered_prompt)
 
         try:
             openai_messages = working_context.to_openai_format()

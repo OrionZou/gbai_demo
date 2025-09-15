@@ -5,7 +5,7 @@ Agent Prompt Service 使用示例
 """
 
 import asyncio
-from agent_runtime.clients.llm.openai_client import LLM
+from agent_runtime.clients.openai_llm_client import LLM
 from agent_runtime.services.agent_prompt_service import (
     AgentPromptService,
     AgentType,

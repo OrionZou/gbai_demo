@@ -3,7 +3,7 @@ import asyncio
 from typing import List
 
 from agent_runtime.agents.cqa_agent import CQAAgent
-from agent_runtime.clients.llm.openai_client import LLM
+from agent_runtime.clients.openai_llm_client import LLM
 from agent_runtime.data_format.qa_format import QAList, QAItem, CQAList
 
 

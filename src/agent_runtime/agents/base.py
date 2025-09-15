@@ -1,10 +1,10 @@
 from abc import ABC, abstractmethod
-from typing import Any, Set, Dict
+from typing import Any, Set, Dict, Optional
 import threading
 from jinja2 import Template, Environment, meta
 
-from agent_runtime.clients.llm.openai_client import LLM
-from agent_runtime.data_format.context_ai import AIContext
+from agent_runtime.clients.openai_llm_client import LLM
+from agent_runtime.data_format.context import AIContext
 from agent_runtime.logging.logger import logger
 
 
@@ -15,7 +15,6 @@ class BaseAgent(ABC):
     Attributes:
         system_prompt (str): 系统提示词
         user_template (Template): 用户输入模板
-        context (AIContext): AI对话上下文
         llm_engine (LLM): LLM客户端引擎
     """
 
@@ -71,7 +70,6 @@ class BaseAgent(ABC):
         )
         self.user_template_vars = self._get_user_template_vars()
 
-        self.reset_context()
         self._initialized.add(agent_name)
 
     def _get_user_template_vars(self) -> Set:
@@ -126,17 +124,6 @@ class BaseAgent(ABC):
             logger.error(f"Failed to render user prompt template: {e}")
             raise ValueError(f"Template rendering failed: {e}")
 
-    def reset_context(self) -> None:
-        """重置对话上下文"""
-        self.context = AIContext()
-        self.context.add_system_prompt(self.system_prompt)
-        logger.debug("Context reset")
-
-    def update_context(self, context: AIContext) -> None:
-        """更新对话上下文"""
-        self.context = context
-        logger.debug("Context updated")
-
     def update_llm_engine(self, llm_engine: LLM) -> None:
         """
         更新LLM引擎
@@ -183,12 +170,12 @@ class BaseAgent(ABC):
             return instances_info
 
     @abstractmethod
-    async def step(self, context: AIContext = None, **kwargs) -> Any:
+    async def step(self, context: Optional[AIContext] = None, **kwargs) -> Any:
         """
         执行一步Agent推理
 
         Args:
-            context: 可选的外部上下文，如果提供则临时使用
+            context: 可选的外部上下文，如果为None则在step中创建临时context
             **kwargs: 用户提示词模板的渲染参数
 
         Returns:

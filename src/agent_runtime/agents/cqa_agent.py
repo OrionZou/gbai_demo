@@ -1,6 +1,6 @@
-from typing import Any
+from typing import Any, Optional
 from agent_runtime.agents.base import BaseAgent
-from agent_runtime.data_format.context_ai import AIContext
+from agent_runtime.data_format.context import AIContext
 from agent_runtime.data_format.qa_format import QAList, CQAList
 from agent_runtime.logging.logger import logger
 
@@ -55,25 +55,29 @@ Q&A序列：
 
     async def step(self, context: AIContext = None, **kwargs) -> str:
         """执行一步推理，提取上下文"""
-        work_context = context or self.context
+        if context is None:
+            working_context = AIContext()
+        else:
+            working_context = context
+        
+        # 添加系统提示词
+        working_context.add_system_prompt(self.system_prompt)
 
         if not self.user_template:
             raise ValueError("User template is not set")
 
         user_prompt = self._render_user_prompt(**kwargs)
-        work_context.add_user_prompt(user_prompt)
+        working_context.add_user_prompt(user_prompt)
 
         try:
-            response = await self.llm_engine.ask(work_context.to_openai_format())
-            work_context.add_assistant(response)
-            if context is None:
-                self.reset_context()
+            response = await self.llm_engine.ask(working_context.to_openai_format())
+            working_context.add_assistant(response)
             return response
         except Exception as e:
             logger.error(f"Context extraction failed: {e}")
             raise
 
-    async def transform_qa_to_cqa(self, qa_list: QAList) -> CQAList:
+    async def transform_qa_to_cqa(self, qa_list: QAList, context: Optional[AIContext] = None) -> CQAList:
         """
         将Q&A列表转换为C&Q&A列表（批量处理，一次LLM调用）
 
@@ -96,7 +100,7 @@ Q&A序列：
 
         # 一次LLM调用处理整个序列
         try:
-            response = await self.step(qa_sequence=qa_sequence)
+            response = await self.step(context=context, qa_sequence=qa_sequence)
             result_data = self._parse_batch_response(response)
 
             # 构建CQA列表

@@ -2,7 +2,7 @@ import uuid
 import time
 from typing import List, Optional
 
-from workbook_ai.infrastructure.clients.weaviate_client import WeaviateClient
+from agent_runtime.clients.weaviate_client import WeaviateClient
 from workbook_ai.domain.message_entity import OSPAMessage, MESSAGE_CLASS
 
 

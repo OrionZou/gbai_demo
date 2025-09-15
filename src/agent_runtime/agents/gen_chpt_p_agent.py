@@ -7,8 +7,8 @@ GenChptPAgent - 章节提示词生成Agent
 from typing import Optional, List, Dict, Any
 
 from agent_runtime.agents.base import BaseAgent
-from agent_runtime.clients.llm.openai_client import LLM
-from agent_runtime.data_format.context_ai import AIContext
+from agent_runtime.clients.openai_llm_client import LLM
+from agent_runtime.data_format.context import AIContext
 from agent_runtime.logging.logger import logger
 
 
@@ -77,12 +77,12 @@ class GenChptPAgent(BaseAgent):
 
         logger.info("GenChptPAgent initialized for chapter prompt generation")
 
-    async def step(self, context: Optional[AIContext] = None, **kwargs) -> str:
+    async def step(self, context: AIContext = None, **kwargs) -> str:
         """
         执行章节提示词生成任务
 
         Args:
-            context: 可选的外部上下文
+            context: 可选的外部上下文，如果为None则创建临时context
             **kwargs: 包含章节信息的参数
 
         Expected kwargs:
@@ -103,12 +103,14 @@ class GenChptPAgent(BaseAgent):
         if not chapter_name:
             raise ValueError("chapter_name parameter is required for prompt generation")
 
-        # 如果没有提供外部上下文，创建新的上下文
+        # 如果没有提供外部上下文，创建新的临时上下文
         if context is None:
             working_context = AIContext()
-            working_context.add_system_prompt(self.system_prompt)
         else:
             working_context = context
+        
+        # 添加系统提示词
+        working_context.add_system_prompt(self.system_prompt)
 
         # 渲染用户提示词
         rendered_prompt = self._render_user_prompt(
@@ -127,6 +129,7 @@ class GenChptPAgent(BaseAgent):
             prompt_content = await self.llm_engine.ask(
                 messages=openai_messages, temperature=0.3
             )
+            working_context.add_assistant(prompt_content)
 
             logger.debug(
                 f"Generated prompt for chapter '{chapter_name}': {prompt_content[:100]}..."
@@ -143,6 +146,7 @@ class GenChptPAgent(BaseAgent):
         qas: List[Dict[str, str]],
         reason: str = "",
         extra_instructions: str = "",
+        context: Optional[AIContext] = None,
     ) -> str:
         """
         章节提示词生成的便捷方法
@@ -152,11 +156,13 @@ class GenChptPAgent(BaseAgent):
             qas: 章节包含的问答对列表
             reason: 章节聚合理由
             extra_instructions: 额外的生成指令
+            context: AI上下文，如果为None则在step中创建
 
         Returns:
             str: 生成的章节提示词
         """
         return await self.step(
+            context=context,
             chapter_name=chapter_name,
             reason=reason,
             qas=qas,

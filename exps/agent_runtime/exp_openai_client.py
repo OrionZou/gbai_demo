@@ -1,8 +1,8 @@
 import asyncio
 from pydantic import BaseModel, Field
 
-from agent_runtime.clients.llm.openai_client import LLM  # 你的类所在路径
-from agent_runtime.data_format.context_ai import AIContext
+from agent_runtime.clients.openai_llm_client import LLM  # 你的类所在路径
+from agent_runtime.data_format.context import AIContext
 from agent_runtime.config.loader import LLMSetting
 
 llm = LLM(config_name=LLMSetting.model)

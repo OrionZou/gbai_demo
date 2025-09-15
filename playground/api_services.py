@@ -5,7 +5,7 @@ API服务模块
 import asyncio
 import aiohttp
 import requests
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 from ospa_models import OSPAItem, ProcessingResult
 
 
@@ -170,19 +170,31 @@ class BackwardService(APIClient):
 
     def process_qas(self,
                     qas: List[Dict[str, str]],
-                    chapters_extra_instructions: str = "",
-                    gen_p_extra_instructions: str = "") -> Dict[str, Any]:
-        """处理问答对，生成OSPA数据"""
+                    chapter_structure: Optional[Dict[str, Any]] = None,
+                    max_level: int = 3,
+                    max_concurrent_llm: int = 10) -> Dict[str, Any]:
+        """处理问答对，生成章节结构和OSPA数据"""
         try:
+            # 转换QA格式从q/a到question/answer
+            formatted_qas = []
+            for qa in qas:
+                formatted_qas.append({
+                    "question": qa.get("q", qa.get("question", "")),
+                    "answer": qa.get("a", qa.get("answer", ""))
+                })
+            
             backward_data = {
-                "qas": qas,
-                "chapters_extra_instructions": chapters_extra_instructions,
-                "gen_p_extra_instructions": gen_p_extra_instructions
+                "qas": formatted_qas,
+                "max_level": max_level,
+                "max_concurrent_llm": max_concurrent_llm
             }
+            
+            if chapter_structure is not None:
+                backward_data["chapter_structure"] = chapter_structure
 
             response = requests.post(f"{self.base_url}/backward",
                                      json=backward_data,
-                                     timeout=120)
+                                     timeout=600)
 
             response.raise_for_status()
             return response.json()

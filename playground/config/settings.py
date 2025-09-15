@@ -9,10 +9,10 @@ class AppConfig:
     
     # API配置
     DEFAULT_API_URL = "http://localhost:8011/agent"
-    API_TIMEOUT = 120
+    API_TIMEOUT = 600
     
     # 并发配置
-    DEFAULT_MAX_CONCURRENT = 5
+    DEFAULT_MAX_CONCURRENT = 10
     MAX_CONCURRENT_OPTIONS = [1, 3, 5, 8, 10, 15]
     
     # 文件上传配置
@@ -50,7 +50,6 @@ class UIConfig:
         {"name": "⚙️ LLM配置", "key": "config"},
         {"name": "🏆 Reward API", "key": "reward"},
         {"name": "↩️ Backward API", "key": "backward"},
-        {"name": "↩️ Backward V2 API", "key": "backward_v2"},
         {"name": "📊 OSPA 表格", "key": "ospa"},
         {"name": "🤖 Agent管理", "key": "agent"}
     ]

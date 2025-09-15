@@ -8,8 +8,8 @@ from typing import List, Tuple, Optional, Dict, Any
 from jinja2 import Template
 
 from agent_runtime.agents.base import BaseAgent
-from agent_runtime.clients.llm.openai_client import LLM
-from agent_runtime.data_format.context_ai import AIContext
+from agent_runtime.clients.openai_llm_client import LLM
+from agent_runtime.data_format.context import AIContext
 from agent_runtime.clients.utils import normalize_to_list
 from agent_runtime.logging.logger import logger
 
@@ -81,12 +81,12 @@ class AggChaptersAgent(BaseAgent):
 
         logger.info("AggChaptersAgent initialized for chapter aggregation")
 
-    async def step(self, context: Optional[AIContext] = None, **kwargs) -> List[Dict[str, Any]]:
+    async def step(self, context: AIContext = None, **kwargs) -> List[Dict[str, Any]]:
         """
         执行章节聚合任务
         
         Args:
-            context: 可选的外部上下文
+            context: 可选的外部上下文，如果为None则创建临时context
             **kwargs: 包含qas和extra_instructions等参数
             
         Expected kwargs:
@@ -103,12 +103,14 @@ class AggChaptersAgent(BaseAgent):
         if not qas:
             raise ValueError("qas parameter is required for chapter aggregation")
         
-        # 如果没有提供外部上下文，创建新的上下文
+        # 如果没有提供外部上下文，创建新的临时上下文
         if context is None:
             working_context = AIContext()
-            working_context.add_system_prompt(self.system_prompt)
         else:
             working_context = context
+        
+        # 添加系统提示词
+        working_context.add_system_prompt(self.system_prompt)
             
         # 渲染用户提示词
         rendered_prompt = self._render_user_prompt(

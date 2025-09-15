@@ -1,6 +1,6 @@
 import uuid
 from workbook_ai.application.services.conversation_service import ConversationService
-from workbook_ai.infrastructure.clients.weaviate_client import WeaviateClient
+from agent_runtime.clients.weaviate_client import WeaviateClient
 from workbook_ai.infrastructure.config.loader import ConfigLoader
 from workbook_ai.domain.message_entity import MESSAGE_CLASS, get_message_schema
 

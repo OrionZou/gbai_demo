@@ -4,15 +4,17 @@ from fastapi import APIRouter, HTTPException, Body
 from pydantic import BaseModel, Field
 
 from agent_runtime.services.reward_service import RewardService, RewardRusult
-from agent_runtime.clients.llm.openai_client import LLM
+from agent_runtime.clients.openai_llm_client import LLM
 from agent_runtime.config.loader import SettingLoader, LLMSetting
-from agent_runtime.services.backward_service import BackwardService, ChapterGroup, OSPA
+from agent_runtime.services.backward_service import BackwardService
+from agent_runtime.data_format.chapter_format import ChapterStructure
+from agent_runtime.data_format.ospa import OSPA
 from agent_runtime.services.backward_v2_service import BackwardV2Service
 from agent_runtime.services.agent_prompt_service import (
     AgentPromptService, AgentPromptInfo, AgentPromptUpdate
 )
 from agent_runtime.data_format.backward_v2_format import BackwardV2Request, BackwardV2Response
-from agent_runtime.data_format.qa_format import QAItem as QAItemData, QAList
+from agent_runtime.data_format.qa_format import QAItem, QAList
 
 router = APIRouter()
 
@@ -374,28 +376,20 @@ async def reward_api(request: RewardRequest = Body(
 
 
 # ======================= Backward API ==========================
-class QAItem(BaseModel):
-    """问答对数据模型（API用）
-    
-    Attributes:
-        q (str): 问题内容
-        a (str): 答案内容
-    """
-    q: str
-    a: str
-
 
 class BackwardRequest(BaseModel):
     """反向知识处理请求模型
     
     Attributes:
         qas (List[QAItem]): 问答对列表
-        chapters_extra_instructions (str, optional): 章节聚合的额外指令
-        gen_p_extra_instructions (str, optional): 提示词生成的额外指令
+        chapter_structure (Optional[Dict]): 可选的现有章节结构
+        max_level (int): 最大层级深度
+        max_concurrent_llm (int): 最大并发LLM调用数量
     """
     qas: List[QAItem]
-    chapters_extra_instructions: str = ""
-    gen_p_extra_instructions: str = ""
+    chapter_structure: Optional[Dict] = None
+    max_level: int = 3
+    max_concurrent_llm: int = 10
 
 
 class BackwardResponse(BaseModel):
@@ -404,7 +398,7 @@ class BackwardResponse(BaseModel):
     Attributes:
         success (bool): 处理是否成功
         message (str): 处理消息
-        chapters (Dict[str, ChapterGroup]): 章节名称到章节对象的映射
+        chapter_structure (Dict): 最终的章节结构
         ospa (List[OSPA]): 转换后的OSPA格式数据列表
         total_chapters (int): 生成的章节总数
         total_qas (int): 输入的问答对总数
@@ -413,7 +407,7 @@ class BackwardResponse(BaseModel):
     """
     success: bool
     message: str
-    chapters: Dict[str, ChapterGroup]
+    chapter_structure: Dict
     ospa: List[OSPA]
     total_chapters: int
     total_qas: int
@@ -430,19 +424,17 @@ async def backward_api(req: BackwardRequest = Body(
             "description": "包含几个Python基础问题的简单示例",
             "value": {
                 "qas": [{
-                    "q": "Python如何定义变量？",
-                    "a": "在Python中使用赋值语句定义变量，如 x = 10"
+                    "question": "Python如何定义变量？",
+                    "answer": "在Python中使用赋值语句定义变量，如 x = 10"
                 }, {
-                    "q": "Python如何定义函数？",
-                    "a": "使用def关键字定义函数，如 def func_name():"
+                    "question": "Python如何定义函数？",
+                    "answer": "使用def关键字定义函数，如 def func_name():"
                 }, {
-                    "q": "什么是Python列表？",
-                    "a": "列表是Python中的可变序列，使用[]定义"
+                    "question": "什么是Python列表？",
+                    "answer": "列表是Python中的可变序列，使用[]定义"
                 }],
-                "chapters_extra_instructions":
-                "请将Python相关的问题聚合到一个章节",
-                "gen_p_extra_instructions":
-                "生成专业的Python技术文档风格提示词"
+                "max_level": 3,
+                "max_concurrent_llm": 10
             }
         },
         "comprehensive_example": {
@@ -450,48 +442,67 @@ async def backward_api(req: BackwardRequest = Body(
             "description": "包含多个技术领域问题的综合示例",
             "value": {
                 "qas": [{
-                    "q": "Python如何定义变量？",
-                    "a": "在Python中使用赋值语句定义变量"
+                    "question": "Python如何定义变量？",
+                    "answer": "在Python中使用赋值语句定义变量"
                 }, {
-                    "q": "什么是RESTful API？",
-                    "a": "RESTful API是遵循REST架构风格的Web服务接口"
+                    "question": "什么是RESTful API？",
+                    "answer": "RESTful API是遵循REST架构风格的Web服务接口"
                 }, {
-                    "q": "什么是数据库索引？",
-                    "a": "索引是提高数据库查询效率的数据结构"
+                    "question": "什么是数据库索引？",
+                    "answer": "索引是提高数据库查询效率的数据结构"
                 }, {
-                    "q": "什么是时间复杂度？",
-                    "a": "时间复杂度描述算法执行时间与输入规模的关系"
+                    "question": "什么是时间复杂度？",
+                    "answer": "时间复杂度描述算法执行时间与输入规模的关系"
                 }, {
-                    "q": "什么是版本控制？",
-                    "a": "版本控制是管理代码变更历史的系统"
+                    "question": "什么是版本控制？",
+                    "answer": "版本控制是管理代码变更历史的系统"
                 }],
-                "chapters_extra_instructions":
-                "按技术领域分类，每个章节包含2-3个相关问答",
-                "gen_p_extra_instructions":
-                "为每个技术领域生成专业、准确的技术文档风格提示词"
+                "chapter_structure": {
+                    "nodes": {
+                        "chapter_1": {
+                            "id": "chapter_1",
+                            "title": "编程基础",
+                            "level": 1,
+                            "parent_id": None,
+                            "children": [],
+                            "description": "基础编程概念",
+                            "content": "",
+                            "related_qa_items": [],
+                            "chapter_number": "1."
+                        }
+                    },
+                    "root_ids": ["chapter_1"],
+                    "max_level": 3
+                },
+                "max_level": 3,
+                "max_concurrent_llm": 10
             }
         }
     })) -> BackwardResponse:
     """
     反向知识处理API
     
-    将问答对聚合成有意义的章节结构，并为每个章节生成辅助提示词。
+    处理问答对生成或更新章节结构，并为每个章节生成辅助提示词。
     这些提示词可用于指导后续的问答生成和知识检索。
     
     主要功能：
-    1. 语义聚合：将相关的Q&A按主题聚合成章节
-    2. 提示词生成：为每个章节生成专用的辅助提示词
+    1. 章节创建或更新：根据是否提供现有章节结构选择不同处理策略
+    2. 智能提示词生成：只为新增或变化的章节生成提示词，保留现有提示词
     3. 知识结构化：提供完整的知识组织结构
     4. OSPA转换：将结构化数据转换为标准OSPA格式
     
+    处理策略：
+    - 无现有章节结构：使用chapter_structure_agent创建新结构
+    - 有现有章节结构：使用chapter_classification_agent更新结构
+    
     适用场景：
-    - 知识库构建和组织
+    - 知识库构建和增量更新
     - 智能问答系统优化
     - 技术文档结构化处理
     - 教学内容章节规划
     
     Returns:
-        BackwardResponse: 包含处理结果的详细信息，包括章节、OSPA数据和统计信息
+        BackwardResponse: 包含处理结果的详细信息，包括章节结构、OSPA数据和统计信息
         
     Raises:
         HTTPException: 当输入验证失败或处理过程中发生错误时
@@ -500,45 +511,91 @@ async def backward_api(req: BackwardRequest = Body(
     if not req.qas:
         raise HTTPException(status_code=400, detail="问答对列表不能为空")
     
-    if len(req.qas) > 100:  # 设置合理的上限
+    if len(req.qas) > 100:  # 设置最大长度为100
         raise HTTPException(status_code=400, detail="问答对数量不能超过100个")
     
     # 验证问答对内容
     for i, qa in enumerate(req.qas):
-        if not qa.q.strip():
+        if not qa.question.strip():
             raise HTTPException(status_code=400, detail=f"第{i+1}个问答对的问题不能为空")
-        if not qa.a.strip():
+        if not qa.answer.strip():
             raise HTTPException(status_code=400, detail=f"第{i+1}个问答对的答案不能为空")
-        if len(qa.q) > 1000:
+        if len(qa.question) > 1000:
             raise HTTPException(status_code=400, detail=f"第{i+1}个问题长度不能超过1000字符")
-        if len(qa.a) > 2000:
+        if len(qa.answer) > 2000:
             raise HTTPException(status_code=400, detail=f"第{i+1}个答案长度不能超过2000字符")
+    
+    # 验证新参数
+    if req.max_level < 1 or req.max_level > 5:
+        raise HTTPException(status_code=400, detail="最大层级必须在1-5之间")
+    
+    if req.max_concurrent_llm < 1 or req.max_concurrent_llm > 20:
+        raise HTTPException(status_code=400, detail="最大并发LLM数量必须在1-20之间")
     
     import time
     start_time = time.time()
     
     try:
+        # 构建QAList
+        qa_list = QAList(session_id="api_request")
+        for qa in req.qas:
+            qa_list.add_qa(qa.question, qa.answer)
+        
+        # 处理可选的章节结构
+        existing_structure = None
+        if req.chapter_structure:
+            existing_structure = ChapterStructure.from_dict(
+                req.chapter_structure, max_level=req.max_level
+            )
+        
         # 调用BackwardService处理
-        chapter_groups, ospa = await backward_service.backward(
-            qas=[(qa.q, qa.a) for qa in req.qas],
-            chapters_extra_instructions=req.chapters_extra_instructions,
-            gen_p_extra_instructions=req.gen_p_extra_instructions)
+        final_structure, ospa = await backward_service.backward(
+            qa_list=qa_list,
+            chapter_structure=existing_structure,
+            max_level=req.max_level,
+            max_concurrent_llm=req.max_concurrent_llm
+        )
 
         # 计算处理时间
         processing_time_ms = int((time.time() - start_time) * 1000)
         
+        # 返回playground期望的格式
+        chapter_structure_dict = {
+            "nodes": {},
+            "root_ids": final_structure.root_ids,
+            "max_level": final_structure.max_level
+        }
+        
+        # 序列化节点数据，保持扁平结构
+        for node_id, node in final_structure.nodes.items():
+            chapter_structure_dict["nodes"][node_id] = {
+                "id": node.id,
+                "title": node.title,
+                "level": node.level,
+                "parent_id": node.parent_id,
+                "children": node.children,
+                "description": node.description,
+                "content": node.content,
+                "related_qa_items": [
+                    {
+                        "question": qa.question,
+                        "answer": qa.answer,
+                        "metadata": qa.metadata
+                    } for qa in node.related_qa_items
+                ],
+                "chapter_number": node.chapter_number
+            }
+        
         return BackwardResponse(
             success=True,
-            message=f"成功处理 {len(req.qas)} 个问答对，生成 {len(chapter_groups)} 个章节",
-            chapters={
-                chapter.chapter_name: chapter
-                for chapter in chapter_groups
-            },
+            message=f"成功处理 {len(req.qas)} 个问答对，生成 {len(final_structure.nodes)} 个章节",
+            chapter_structure=chapter_structure_dict,
             ospa=ospa,
-            total_chapters=len(chapter_groups),
+            total_chapters=len(final_structure.nodes),
             total_qas=len(req.qas),
             total_ospa=len(ospa),
-            processing_time_ms=processing_time_ms)
+            processing_time_ms=processing_time_ms
+        )
             
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"输入数据格式错误: {str(e)}")
@@ -728,11 +785,6 @@ async def validate_agent_template_variables(
 
 
 # ======================= Backward V2 API ==========================
-
-class QAListRequest(BaseModel):
-    """QA列表请求模型（API用）"""
-    items: List[QAItem]
-    session_id: str = ""
 
 
 @router.post("/backward_v2", response_model=BackwardV2Response)
