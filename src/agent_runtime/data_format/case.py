@@ -3,9 +3,9 @@ import uuid
 from typing import List, Optional, Union, Dict, Any, Annotated
 from pydantic import BaseModel, Field
 
-from workbook_ai.domain.entity.message import Message
-from workbook_ai.domain.entity.content import ContentPart
-from workbook_ai.infrastructure.logging.logger import logger
+from agent_runtime.data_format.message import Message
+from agent_runtime.data_format.content import ContentPart
+from agent_runtime.logging.logger import logger
 
 
 class Observation(BaseModel):

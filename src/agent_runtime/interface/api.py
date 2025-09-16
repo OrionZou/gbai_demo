@@ -1,21 +1,24 @@
 import time
 from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, Body
-from pydantic import BaseModel, Field
 
 from agent_runtime.services.reward_service import RewardService, RewardRusult
 from agent_runtime.clients.openai_llm_client import LLM
 from agent_runtime.config.loader import SettingLoader, LLMSetting
 from agent_runtime.services.backward_service import BackwardService
-from agent_runtime.data_format.chapter_format import ChapterStructure
-from agent_runtime.data_format.ospa import OSPA
 from agent_runtime.services.agent_prompt_service import (
     AgentPromptService, AgentPromptInfo, AgentPromptUpdate
 )
 from agent_runtime.services.bqa_extract_service import BQAExtractService
-from agent_runtime.data_format.qa_format import QAItem, QAList
-from agent_runtime.data_format.bqa_extract_format import (
-    BQAExtractRequest, BQAExtractResponse
+
+# 导入核心数据结构
+from agent_runtime.data_format import (
+    ChapterStructure, OSPA, QAItem, QAList, BQAExtractRequest, BQAExtractResponse
+)
+
+# 导入API模型
+from agent_runtime.interface.api_models import (
+    LLMAskRequest, LLMAskResponse, RewardRequest, BackwardRequest, BackwardResponse
 )
 
 router = APIRouter()
@@ -27,52 +30,7 @@ async def health_check():
     return {"status": "healthy", "service": "agent_runtime"}
 
 
-class RewardRequest(BaseModel):
-    question: str
-    candidates: List[str]
-    target_answer: str
-
-
-class LLMAskRequest(BaseModel):
-    """LLM Ask API 请求模型
-    
-    Attributes:
-        messages (List[Dict[str, Any]]): 消息列表，遵循 OpenAI 格式
-        stream (Optional[bool]): 是否启用流式输出，默认使用配置中的设置
-        temperature (Optional[float]): 生成温度，范围 0.0-2.0，默认使用配置中的设置
-    """
-    messages: List[Dict[str, Any]] = Field(
-        ...,
-        description="消息列表，每个消息包含 role 和 content 字段",
-        min_items=1
-    )
-    stream: Optional[bool] = Field(
-        None,
-        description="是否启用流式输出"
-    )
-    temperature: Optional[float] = Field(
-        None,
-        description="生成温度，控制输出的随机性",
-        ge=0.0,
-        le=2.0
-    )
-
-
-class LLMAskResponse(BaseModel):
-    """LLM Ask API 响应模型
-    
-    Attributes:
-        success (bool): 请求是否成功
-        message (str): 响应消息或错误信息
-        content (Optional[str]): LLM 生成的内容
-        model (str): 使用的模型名称
-        processing_time_ms (int): 处理耗时（毫秒）
-    """
-    success: bool
-    message: str
-    content: Optional[str] = None
-    model: str
-    processing_time_ms: int
+# API模型已移动到 interface.api_models 中
 
 
 llm_client = LLM()
@@ -378,43 +336,7 @@ async def reward_api(request: RewardRequest = Body(
 
 
 # ======================= Backward API ==========================
-
-class BackwardRequest(BaseModel):
-    """反向知识处理请求模型
-    
-    Attributes:
-        qas (List[QAItem]): 问答对列表
-        chapter_structure (Optional[Dict]): 可选的现有章节结构
-        max_level (int): 最大层级深度
-        max_concurrent_llm (int): 最大并发LLM调用数量
-    """
-    qas: List[QAItem]
-    chapter_structure: Optional[Dict] = None
-    max_level: int = 3
-    max_concurrent_llm: int = 10
-
-
-class BackwardResponse(BaseModel):
-    """反向知识处理响应模型
-    
-    Attributes:
-        success (bool): 处理是否成功
-        message (str): 处理消息
-        chapter_structure (Dict): 最终的章节结构
-        ospa (List[OSPA]): 转换后的OSPA格式数据列表
-        total_chapters (int): 生成的章节总数
-        total_qas (int): 输入的问答对总数
-        total_ospa (int): 生成的OSPA条目总数
-        processing_time_ms (int): 处理耗时（毫秒）
-    """
-    success: bool
-    message: str
-    chapter_structure: Dict
-    ospa: List[OSPA]
-    total_chapters: int
-    total_qas: int
-    total_ospa: int
-    processing_time_ms: int
+# API模型已移动到 interface.api_models 中
 
 
 @router.post("/backward", response_model=BackwardResponse)

@@ -6,7 +6,9 @@
       "mcp__ide__getDiagnostics",
       "Bash(curl:*)",
       "Bash(mv:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(poetry install:*)",
+      "Bash(poetry lock:*)"
     ],
     "deny": [],
     "ask": []
