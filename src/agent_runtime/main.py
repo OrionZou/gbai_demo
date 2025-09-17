@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from agent_runtime.interface import api
-from agent_runtime.interface import chat_v2_api
+from agent_runtime.interface import chat_api
 
 
 def create_app() -> FastAPI:
@@ -15,8 +15,8 @@ def create_app() -> FastAPI:
         version="1.0.0",
     )
     # 挂载 API 路由
-    app.include_router(api.router, prefix="/agent")
-    app.include_router(chat_v2_api.router, prefix="/agent")
+    app.include_router(api.router, prefix="/agent", tags=["agent_runtime"])
+    app.include_router(chat_api.router, prefix="/agent", tags=["agent_v1.5"])
 
     return app
 

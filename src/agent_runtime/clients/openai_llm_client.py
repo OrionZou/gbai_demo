@@ -6,9 +6,8 @@ from openai import AsyncOpenAI, AuthenticationError, OpenAIError
 from tenacity import retry, stop_after_attempt, wait_random_exponential
 
 from agent_runtime.config.loader import LLMSetting
-
+from agent_runtime.stats.token_counter import TokenCounter
 from agent_runtime.clients.utils import fix_json
-
 from agent_runtime.logging.logger import logger
 
 ToolChoiceLiteral = Literal["none", "auto", "required"]
@@ -50,6 +49,7 @@ class LLM:
         messages: List[Dict[str, Any]],
         stream: Optional[bool] = None,
         temperature: Optional[float] = None,
+        token_counter: Optional[TokenCounter] = None,
     ) -> str:
         stream = self.stream if stream is None else stream
         try:
@@ -65,6 +65,14 @@ class LLM:
                 )
                 if not rsp.choices or not rsp.choices[0].message.content:
                     raise ValueError("Empty or invalid response from LLM")
+
+                # Update token counter if provided
+                if token_counter is not None and rsp.usage:
+                    token_counter.add_call(
+                        input_tokens=rsp.usage.prompt_tokens,
+                        output_tokens=rsp.usage.completion_tokens
+                    )
+
                 return rsp.choices[0].message.content
 
             # streaming
@@ -76,14 +84,28 @@ class LLM:
                     temperature if temperature is not None else self.temperature
                 ),
                 stream=True,
+                stream_options={"include_usage": True} if token_counter else None,
             )
             chunks: List[str] = []
+            usage_info = None
             async for chunk in rsp:
-                delta = chunk.choices[0].delta.content or ""
-                if delta:
+                # Capture usage information from the final chunk
+                if hasattr(chunk, 'usage') and chunk.usage:
+                    usage_info = chunk.usage
+
+                if chunk.choices and chunk.choices[0].delta.content:
+                    delta = chunk.choices[0].delta.content
                     chunks.append(delta)
             #         print(delta, end="", flush=True)
             # print()
+
+            # Update token counter if provided and usage info available
+            if token_counter is not None and usage_info:
+                token_counter.add_call(
+                    input_tokens=usage_info.prompt_tokens,
+                    output_tokens=usage_info.completion_tokens
+                )
+
             text = "".join(chunks).strip()
             if not text:
                 raise ValueError("Empty response from streaming LLM")
@@ -112,6 +134,7 @@ class LLM:
         tool_choice: ToolChoiceLiteral = "auto",
         temperature: Optional[float] = None,
         timeout: Optional[float] = None,
+        token_counter: Optional[TokenCounter] = None,
     ):
         """
         使用 function/tool-calling。返回底层 message（与 OpenAI SDK 对齐）。
@@ -135,6 +158,14 @@ class LLM:
             )
             if not rsp.choices or not rsp.choices[0].message:
                 raise ValueError("Invalid or empty response from LLM (no message)")
+
+            # Update token counter if provided
+            if token_counter is not None and rsp.usage:
+                token_counter.add_call(
+                    input_tokens=rsp.usage.prompt_tokens,
+                    output_tokens=rsp.usage.completion_tokens
+                )
+
             return rsp.choices[0].message
 
         except ValueError as ve:
@@ -155,8 +186,9 @@ class LLM:
     async def structured_output(
         self,
         messages: List[Dict[str, Any]],
-        response_format: BaseModel,  # 传入 Pydantic BaseModel 的“类”（不是实例）
+        response_format: BaseModel,  # 传入 Pydantic BaseModel 的"类"（不是实例）
         temperature: Optional[float] = None,
+        token_counter: Optional[TokenCounter] = None,
     ) -> BaseModel:
         """
         使用 beta.parse 返回结构化对象（Pydantic BaseModel 实例）。
@@ -173,6 +205,14 @@ class LLM:
             parsed = rsp.choices[0].message.parsed
             if parsed is None:
                 raise ValueError("Empty parsed response from LLM")
+
+            # Update token counter if provided
+            if token_counter is not None and rsp.usage:
+                token_counter.add_call(
+                    input_tokens=rsp.usage.prompt_tokens,
+                    output_tokens=rsp.usage.completion_tokens
+                )
+
             return parsed
 
         except ValueError as ve:
@@ -191,6 +231,7 @@ class LLM:
         self,
         messages: List[Dict[str, Any]],
         temperature: Optional[float] = None,
+        token_counter: Optional[TokenCounter] = None,
     ) -> Dict[str, Any]:
         """
         使用 json_object 格式返回结构化 JSON 对象。
@@ -206,6 +247,14 @@ class LLM:
             message = rsp.choices[0].message
             if not message or not message.content:
                 raise ValueError("Empty response content from LLM")
+
+            # Update token counter if provided
+            if token_counter is not None and rsp.usage:
+                token_counter.add_call(
+                    input_tokens=rsp.usage.prompt_tokens,
+                    output_tokens=rsp.usage.completion_tokens
+                )
+
             parsed: Any = fix_json(message.content)
             if not isinstance(parsed, dict) and not isinstance(parsed, list):
                 raise ValueError("Response is not a valid JSON object")

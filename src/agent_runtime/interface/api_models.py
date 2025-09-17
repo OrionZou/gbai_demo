@@ -4,18 +4,37 @@ API 请求和响应格式统一定义
 这个文件包含了所有Agent Runtime API的请求和响应格式，
 与核心数据结构分离，专门用于API接口定义。
 """
-import time
+
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 
-from agent_runtime.data_format.qa_format import QAItem
+from agent_runtime.data_format.qa_format import QAItem, QAList, BQAList
 from agent_runtime.data_format.ospa import OSPA
-from agent_runtime.data_format.bqa_extract_format import (
-    BQAExtractRequest, BQAExtractResponse
-)
+from agent_runtime.data_format.fsm import StateMachine
+
+
+# ======================= Core Data Models ==========================
+
+
+class Setting(BaseModel):
+    """聊天配置类 - 用于Chat API接口"""
+    api_key: str
+    chat_model: str = "gpt-4o-mini"
+    base_url: str = "https://api.openai.com/v1/"
+    top_p: float = 1.0
+    temperature: float = 1.0
+
+    top_k: int = 5
+    vector_db_url: str = ""
+    agent_name: str
+
+    global_prompt: str = ""
+    max_history_len: int = 128
+    state_machine: StateMachine = StateMachine()
 
 
 # ======================= LLM API Models ==========================
+
 
 class LLMAskRequest(BaseModel):
     """LLM Ask API 请求模型
@@ -25,20 +44,13 @@ class LLMAskRequest(BaseModel):
         stream (Optional[bool]): 是否启用流式输出，默认使用配置中的设置
         temperature (Optional[float]): 生成温度，范围 0.0-2.0，默认使用配置中的设置
     """
+
     messages: List[Dict[str, Any]] = Field(
-        ...,
-        description="消息列表，每个消息包含 role 和 content 字段",
-        min_items=1
+        ..., description="消息列表，每个消息包含 role 和 content 字段", min_items=1
     )
-    stream: Optional[bool] = Field(
-        None,
-        description="是否启用流式输出"
-    )
+    stream: Optional[bool] = Field(None, description="是否启用流式输出")
     temperature: Optional[float] = Field(
-        None,
-        description="生成温度，控制输出的随机性",
-        ge=0.0,
-        le=2.0
+        None, description="生成温度，控制输出的随机性", ge=0.0, le=2.0
     )
 
 
@@ -52,6 +64,7 @@ class LLMAskResponse(BaseModel):
         model (str): 使用的模型名称
         processing_time_ms (int): 处理耗时（毫秒）
     """
+
     success: bool
     message: str
     content: Optional[str] = None
@@ -61,14 +74,17 @@ class LLMAskResponse(BaseModel):
 
 # ======================= Reward API Models ==========================
 
+
 class RewardRequest(BaseModel):
     """Reward API 请求模型"""
+
     question: str
     candidates: List[str]
     target_answer: str
 
 
 # ======================= Backward API Models ==========================
+
 
 class BackwardRequest(BaseModel):
     """反向知识处理请求模型
@@ -79,6 +95,7 @@ class BackwardRequest(BaseModel):
         max_level (int): 最大层级深度
         max_concurrent_llm (int): 最大并发LLM调用数量
     """
+
     qas: List[QAItem]
     chapter_structure: Optional[Dict] = None
     max_level: int = 3
@@ -98,6 +115,7 @@ class BackwardResponse(BaseModel):
         total_ospa (int): 生成的OSPA条目总数
         processing_time_ms (int): 处理耗时（毫秒）
     """
+
     success: bool
     message: str
     chapter_structure: Dict
@@ -110,13 +128,14 @@ class BackwardResponse(BaseModel):
 
 # ======================= Chat V2 API Models ==========================
 
-from agent_runtime.data_format.v2_core import Memory, Setting
-from agent_runtime.data_format.tools import RequestTool
+from agent_runtime.data_format.fsm import Memory
+from agent_runtime.data_format.tool import RequestTool
 from agent_runtime.data_format.feedback import Feedback, FeedbackSetting
 
 
 class ChatRequest(BaseModel):
     """聊天请求格式"""
+
     user_message: str = ""
     edited_last_response: str = ""
     recall_last_user_message: bool = False
@@ -127,6 +146,7 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     """聊天响应格式"""
+
     response: str
     memory: Memory
     result_type: str = "Success"
@@ -137,18 +157,21 @@ class ChatResponse(BaseModel):
 
 class LearnRequest(BaseModel):
     """学习请求格式"""
+
     settings: FeedbackSetting
     feedbacks: List[Feedback]
 
 
 class LearnResponse(BaseModel):
     """学习响应格式"""
+
     status: str
     data: List[str]
 
 
 class GetFeedbackParam(BaseModel):
     """获取反馈参数"""
+
     agent_name: str
     vector_db_url: str
     offset: int = 0
@@ -157,15 +180,77 @@ class GetFeedbackParam(BaseModel):
 
 class DeleteFeedbackParam(BaseModel):
     """删除反馈参数"""
+
     agent_name: str
     vector_db_url: str
 
 
 # ======================= BQA Extract API Models ==========================
 
-# BQAExtractRequest 和 BQAExtractResponse 已在 data_format.bqa_extract_format 中定义
+
+class BQAExtractRequest(BaseModel):
+    """BQA拆解请求"""
+
+    qa_lists: List[QAList] = Field(
+        ..., description="Q&A对话列表，每个QAList代表一个多轮对话"
+    )
+
+    context_extraction_mode: str = Field(
+        default="auto",
+        description="背景提取模式：auto（自动判断）、minimal（最小化）、detailed（详细）",
+    )
+
+    preserve_session_info: bool = Field(default=True, description="是否保留会话信息")
+
+    max_concurrent_processing: int = Field(default=3, description="最大并发处理数量")
+
+    def model_post_init(self, __context) -> None:
+        """模型初始化后的验证"""
+        # 验证模式
+        valid_modes = ["auto", "minimal", "detailed"]
+        if self.context_extraction_mode not in valid_modes:
+            raise ValueError(f"context_extraction_mode必须是{valid_modes}中的一个")
+
+        # 验证并发数量
+        if self.max_concurrent_processing < 1 or self.max_concurrent_processing > 10:
+            raise ValueError("max_concurrent_processing必须在1-10之间")
+
+
+class BQAExtractSessionResult(BaseModel):
+    """单个会话的BQA拆解结果"""
+
+    session_id: str = Field(..., description="会话ID")
+    original_qa_count: int = Field(..., description="原始QA对数量")
+    extracted_bqa_count: int = Field(..., description="提取的BQA数量")
+    bqa_list: BQAList = Field(..., description="拆解后的BQA列表")
+    processing_time_ms: int = Field(..., description="处理时间（毫秒）")
+    extraction_summary: str = Field(default="", description="提取摘要")
+
+
+class BQAExtractResponse(BaseModel):
+    """BQA拆解响应"""
+
+    session_results: List[BQAExtractSessionResult] = Field(
+        default_factory=list, description="各个会话的拆解结果"
+    )
+
+    total_sessions: int = Field(..., description="总会话数")
+    total_original_qas: int = Field(..., description="总原始QA对数")
+    total_extracted_bqas: int = Field(..., description="总提取BQA数")
+
+    processing_summary: Dict[str, Any] = Field(
+        default_factory=dict, description="处理摘要信息"
+    )
+
+    operation_log: List[str] = Field(default_factory=list, description="操作日志")
+
+    total_processing_time_ms: int = Field(..., description="总处理时间（毫秒）")
+
+
 # 这里重新导出以保持API接口的一致性
 __all__ = [
+    # Core Data Models
+    "Setting",
     # LLM API
     "LLMAskRequest",
     "LLMAskResponse",

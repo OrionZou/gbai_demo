@@ -8,10 +8,12 @@ import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from agent_runtime.data_format.v2_core import Setting, Memory, StateMachine, State
-from agent_runtime.data_format.tools import RequestTool, RequestMethodEnum
+from agent_runtime.interface.api_models import Setting
+from agent_runtime.data_format.fsm import Memory, StateMachine, State
+from agent_runtime.data_format.tool import RequestTool, RequestMethodEnum
 from agent_runtime.data_format.feedback import Feedback, FeedbackSetting
-from agent_runtime.services.chat_v2_service import ChatV2Service, ChatRequest, LearnRequest
+from agent_runtime.services.chat_v1_5_service import ChatService
+from agent_runtime.interface.api_models import ChatRequest, LearnRequest
 
 
 async def test_chat_api():

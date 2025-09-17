@@ -2,7 +2,7 @@ from typing import List, Annotated
 from fastapi import APIRouter, HTTPException, status, Body, Query
 import json
 
-from agent_runtime.services.chat_v2_service import ChatV2Service
+from agent_runtime.services.chat_v1_5_service import ChatService
 from agent_runtime.interface.api_models import (
     ChatRequest,
     ChatResponse,
@@ -15,7 +15,7 @@ from agent_runtime.data_format.feedback import Feedback
 from agent_runtime.logging.logger import logger
 
 router = APIRouter()
-chat_service = ChatV2Service()
+chat_service = ChatService()
 
 
 @router.post("/chat", response_model=ChatResponse, status_code=status.HTTP_200_OK)

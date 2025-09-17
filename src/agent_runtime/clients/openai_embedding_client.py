@@ -2,7 +2,7 @@ import asyncio
 from typing import List, Optional
 from openai import AsyncOpenAI
 
-from workbook_ai.infrastructure.logging.logger import logger
+from agent_runtime.logging.logger import logger
 
 
 class OpenAIEmbeddingClient:
