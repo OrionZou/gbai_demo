@@ -30,8 +30,8 @@ playground/
 ## 单元测试
 在项目根目录的./tests中进行
 
-## demo测试
-在项目根目录的./exps中进行
+## demo
+写demo，在项目根目录的./exps中进行
 
 ## 批处理脚本
 写在项目根目录的./scripts中
@@ -49,51 +49,6 @@ playground/
 - **Streamlit**: Web界面
 - **OpenAI API**: LLM调用
 
-## Playground 开发记录
+## 开发记录
 
-### 最新功能更新 (2025-09-15)
-
-#### 🔧 BQA Extract 多轮对话解耦功能
-新增多轮对话解耦功能，将多轮对话拆解为独立的背景-问题-答案(BQA)格式。
-
-**相关文件:**
-- `playground/pages/bqa_extract_page.py` - BQA Extract 页面
-- `playground/components/forms.py` - 新增 BQAExtractTestForm 表单组件
-- `playground/api_services.py` - 新增 BQAExtractService API服务
-- `playground/config/examples.py` - 新增 BQA_EXTRACT_EXAMPLES 示例数据
-- `playground/config/settings.py` - 配置页面路由
-- `playground/app.py` - 主应用路由更新
-
-**功能特性:**
-- 支持 auto/minimal/detailed 三种背景提取模式
-- 支持多会话并发处理
-- 提供示例数据、手动输入、CSV上传三种输入方式
-- 完整的结果展示和导出功能
-
-**API 端点:** `/bqa/extract`
-
-#### 🎯 Backward API 示例优化
-更新了 Backward API 测试示例，增加了带已有目录和不带目录的10条数据示例。
-
-**示例类型:**
-- `有现有章节示例(10条数据)` - 容器化技术主题，包含预设章节结构
-- `无现有章节示例(10条数据)` - 机器学习主题，让系统自动生成章节结构
-
-### 开发规范提醒
-
-1. **Playground 页面开发模式:**
-   - 继承自对应的页面基类
-   - 使用 ServiceManager 统一管理 API 调用
-   - 表单组件放在 `components/forms.py`
-   - 示例数据放在 `config/examples.py`
-   - 页面配置在 `config/settings.py` 的 TAB_CONFIG
-
-2. **API 服务集成:**
-   - 新服务类继承 APIClient
-   - 在 ServiceManager 中注册新服务
-   - 使用统一的错误处理和超时配置
-
-3. **数据格式约定:**
-   - 问答对统一使用 `q`/`a` 或 `question`/`answer` 字段
-   - 会话数据包含 `session_id` 和 `items` 字段
-   - 处理结果包含 `success`、时间统计等标准字段
+在 docs/ai_dev_log 中完成，文件以 {开发内容关键词}_{年}-{月}-{日}.md 去命名
