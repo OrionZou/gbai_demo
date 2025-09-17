@@ -358,7 +358,6 @@ async def generate_chat(
         # 创建ChatService实例（每次调用新建）
         chat_service = _get_chat_service(request.settings)
 
-
         settings = Setting(**request.settings.model_dump())
         memory = Memory(**request.memory.model_dump())
 
@@ -409,6 +408,9 @@ async def learn_from_feedback(
                         "settings": {
                             "vector_db_url": "http://weaviate:8080",
                             "agent_name": "TestAgent",
+                            "embedding_api_key": "your-openai-api-key-here",
+                            "embedding_model": "text-embedding-3-small",
+                            "embedding_base_url": "https://api.openai.com/v1/",
                         },
                         "feedbacks": [
                             {
@@ -428,6 +430,9 @@ async def learn_from_feedback(
                         "settings": {
                             "vector_db_url": "http://weaviate:8080",
                             "agent_name": "TestAgent",
+                            "embedding_api_key": "your-openai-api-key-here",
+                            "embedding_model": "text-embedding-3-small",
+                            "embedding_base_url": "https://api.openai.com/v1/",
                         },
                         "feedbacks": [
                             {
@@ -464,9 +469,9 @@ async def learn_from_feedback(
         feedback_setting = FeedbackSetting(
             vector_db_url=request.settings.vector_db_url,
             agent_name=request.settings.agent_name,
-            embedding_api_key="dummy",  # 需要根据实际情况调整
-            embedding_model="text-embedding-3-small",
-            embedding_base_url="https://api.openai.com/v1/",
+            embedding_api_key=request.settings.embedding_api_key,  # 需要根据实际情况调整
+            embedding_model=request.settings.embedding_model,
+            embedding_base_url=request.settings.embedding_base_url,
             embedding_vector_dim=1024,
             top_k=5,
         )
@@ -553,3 +558,34 @@ async def delete_all_feedbacks_endpoint(
     except Exception as e:
         logger.exception("Error deleting feedbacks", exc_info=e)
         raise HTTPException(500, detail="Failed to delete feedbacks") from e
+
+
+@router.delete("/collections/{agent_name}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_collection(
+    agent_name: str,
+    vector_db_url: str = Query(..., description="Vector database URL"),
+):
+    """
+    删除指定agent的整个集合
+
+    Args:
+        agent_name: Agent名称
+        vector_db_url: 向量数据库URL
+    """
+    try:
+        # 创建临时FeedbackSetting
+        feedback_settings = FeedbackSetting(
+            vector_db_url=vector_db_url,
+            agent_name=agent_name,
+            embedding_api_key="dummy",  # 删除操作不需要真实的embedding key
+            top_k=5,
+        )
+
+        # 获取FeedbackService实例并删除集合
+        feedback_service = _get_feedback_service(feedback_settings)
+        await feedback_service.delete_collection(agent_name)
+
+        logger.info(f"Deleted collection for agent: {agent_name}")
+    except Exception as e:
+        logger.exception("Error deleting collection", exc_info=e)
+        raise HTTPException(500, detail="Failed to delete collection") from e

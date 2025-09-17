@@ -151,7 +151,7 @@ class FeedbackSetting(BaseModel):
     agent_name: str
 
     embedding_api_key: str
-    embedding_model: str = ""
+    embedding_model: str = "text-embedding-3-large"
     embedding_base_url: str = "https://api.openai.com/v1/"
     embedding_vector_dim: int = 1024
 

@@ -20,8 +20,6 @@ from .api_models import (
     BQAExtractResponse,
 )
 
-# Feedback API
-from .feedback_api import router as feedback_router
 
 __all__ = [
     # LLM API
@@ -41,7 +39,5 @@ __all__ = [
     "DeleteFeedbackParam",
     # BQA Extract API
     "BQAExtractRequest",
-    "BQAExtractResponse",
-    # Feedback API
-    "feedback_router",
+    "BQAExtractResponse"
 ]

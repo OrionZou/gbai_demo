@@ -109,11 +109,10 @@ class FeedbackService:
             #     vector_config=vector_config,
             # )
 
-            # 创建集合，使用text2vec-openai模块作为vectorizer
             vector_config = {
                 "default": {
                     "vectorizer": {
-                        "text2vec-openai": {}
+                        "none": {}
                     },
                     "vectorIndexType": "hnsw",
                     "vectorIndexConfig": {
@@ -182,9 +181,9 @@ class FeedbackService:
         hash_obj = hashlib.sha256(text.encode())
         hex_hash = hash_obj.hexdigest()
 
-        # 转换为固定长度的浮点向量 (384维，兼容常见嵌入模型)
-        # dimensions = self.embedding_client.dimensions
-        dimensions = 384
+        # 转换为固定长度的浮点向量
+        dimensions = getattr(self.embedding_client, 'dimensions', None) or 1024
+        # dimensions = 384
         vector = []
         part_d = int(dimensions / 4)
         for i in range(0, part_d):  # 96 * 4 = 384

@@ -171,12 +171,14 @@ class WeaviateClient:
         class_name: str,
         properties: Dict[str, Any],
         additional: Optional[Dict[str, Any]] = None,
-        object_id: str = str(uuid.uuid4()),
+        object_id: Optional[str] = None,
         vector: Optional[List[float]] = None,
         vectors: Optional[Dict[str, List[float]]] = None,
         vector_weights: Optional[Dict[str, int]] = None,
     ) -> Dict[str, Any]:
         """创建对象"""
+        if object_id is None:
+            object_id = str(uuid.uuid4())
         obj = {"class": class_name, "properties": properties, "id": object_id}
         if vector:
             obj["vector"] = vector

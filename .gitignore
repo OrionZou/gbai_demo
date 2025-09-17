@@ -107,9 +107,11 @@ __pydantic__/
 .coverage
 .pytest_cache/
 htmlcov/
+*.zip
 
 # uv
 .uv/
 
 dataset/
 data/
+
