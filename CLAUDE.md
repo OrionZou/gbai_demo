@@ -36,12 +36,12 @@ playground/
 ## 批处理脚本
 写在项目根目录的./scripts中
 
-
 # 开发建议
 1. 开发时，没有明确说写测试demo，请不要构建单元测试，但可以构建demo测试
 2. 使用pydantic 构建数据类
 3. 代码注释简洁易懂
 4. 开发agent时，请基于BaseAgent的基类开发，step抽象方法需要实现，尽量减少agent中的方法创建
+5. 写代码，需要写测试demo时，测试demo完成功能验证后，请删掉
 
 # 技术栈
 - **Python**: 异步编程(asyncio)
@@ -51,4 +51,4 @@ playground/
 
 ## 开发记录
 
-在 docs/ai_dev_log 中完成，文件以 {开发内容关键词}_{年}-{月}-{日}.md 去命名
+在 docs/ai_dev_log 中完成，文件以 {文件命名}_{年}-{月}-{日}.md 去命名

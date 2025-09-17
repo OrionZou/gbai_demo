@@ -91,7 +91,7 @@ selected."""
 
         Args:
             context: 可选的外部上下文，如果为None则创建临时context
-            **kwargs: 包含settings, memory, feedbacks, token_counter等参数
+            **kwargs: 包含settings, memory, feedbacks等参数
 
         Returns:
             State: 选择的下一个状态
@@ -103,7 +103,6 @@ selected."""
         settings = kwargs.get('settings')
         memory = kwargs.get('memory')
         feedbacks = kwargs.get('feedbacks', [])
-        token_counter = kwargs.get('token_counter')
 
         if not settings or not memory:
             raise ValueError("settings and memory are required")
@@ -184,17 +183,14 @@ selected."""
 
         try:
             # 调用LLM
+            
             openai_messages = working_context.to_openai_format()
+            logger.debug(f"openai_messages:{openai_messages}")
             response = await self.llm_engine.ask(
                 messages=openai_messages,
                 temperature=getattr(settings, 'temperature', 1.0),
             )
 
-            # 更新token计数器
-            if token_counter:
-                token_counter.llm_calling_times += 1
-                # 注意：LLM类的ask方法可能没有直接返回token信息
-                # 这里需要根据实际LLM实现来调整
 
             # 解析响应
             state_index = safe_to_int(response)

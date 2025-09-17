@@ -5,70 +5,88 @@ Chat V1.5 Service
 """
 
 import json
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, TYPE_CHECKING
 
 from agent_runtime.data_format.fsm import Memory
 from agent_runtime.interface.api_models import Setting
 from agent_runtime.data_format.action import V2Action
 from agent_runtime.data_format.fsm import Step
 from agent_runtime.data_format.feedback import (
-    FeedbackSetting,
     TAG_PREFIX_OBSERVATION_NAME,
     TAG_PREFIX_STATE_NAME,
 )
+from agent_runtime.interface.api_models import FeedbackSetting
 from agent_runtime.services.feedback_service import FeedbackService
 from agent_runtime.data_format.tool import RequestTool, SendMessageToUser
-from agent_runtime.stats import TokenCounter
 from agent_runtime.agents.select_actions_agent import SelectActionsAgent
 from agent_runtime.agents.state_select_agent import StateSelectAgent
 from agent_runtime.agents.new_state_agent import NewStateAgent
 from agent_runtime.clients.openai_llm_client import LLM
 from agent_runtime.data_format.tool import ActionExecutor
+from agent_runtime.config.loader import LLMSetting
 from agent_runtime.logging.logger import logger
 
+if TYPE_CHECKING:
+    from agent_runtime.data_format.fsm import State
+
 # Additional imports for V2 service functionality
-from agent_runtime.services.feedback_service import FeedbackService
 from agent_runtime.clients.weaviate_client import WeaviateClient
 from agent_runtime.clients.openai_embedding_client import OpenAIEmbeddingClient
-from agent_runtime.interface.api_models import (
-    ChatRequest,
-    ChatResponse,
-    LearnRequest,
-    LearnResponse,
-    GetFeedbackParam,
-    DeleteFeedbackParam
-)
-from agent_runtime.data_format.feedback import Feedback, FeedbackSetting
 
 
 class ChatService:
     """
     Chat V1.5 服务类
 
-    重构自v2_core.py的chat方法，提供更好的模块化和可维护性
+    重构自v2_core.py的chat方法，提供更好的模块化和可维护性。
+    每次调用generate_chat时根据传入参数动态创建llm_engine，保持agent静态创建。
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """初始化ChatService"""
         self.action_executor = ActionExecutor()
 
-        # 初始化LLM引擎
-        self.llm_engine = LLM()
+        # 静态创建agents（使用默认LLM，后续可以更新）
+        default_llm = LLM()
+        self.select_actions_agent = SelectActionsAgent(llm_engine=default_llm)
+        self.state_select_agent = StateSelectAgent(llm_engine=default_llm)
+        self.new_state_agent = NewStateAgent(llm_engine=default_llm)
 
-        # 初始化各种agents
-        self.select_actions_agent = SelectActionsAgent()
-        self.state_select_agent = StateSelectAgent(llm_engine=self.llm_engine)
-        self.new_state_agent = NewStateAgent(llm_engine=self.llm_engine)
+        # FeedbackService链接
+        self.feedback_service: Optional[FeedbackService] = None
 
-        logger.debug("ChatService initialized with state agents")
+        logger.debug("ChatService initialized with static agents")
+
+    def update_agents_llm_engine(self, llm_engine: LLM) -> None:
+        """
+        更新agents的LLM引擎
+
+        Args:
+            llm_engine: 新的LLM引擎实例
+        """
+        # 更新需要LLM的agents
+        self.select_actions_agent.llm_engine = llm_engine
+        self.state_select_agent.llm_engine = llm_engine
+        self.new_state_agent.llm_engine = llm_engine
+
+        logger.debug(f"Updated agents with new LLM engine: {llm_engine.model}")
+
+    def link_feedback_service(self, feedback_service: FeedbackService) -> None:
+        """
+        链接FeedbackService到ChatService
+
+        Args:
+            feedback_service: FeedbackService实例
+        """
+        self.feedback_service = feedback_service
+        logger.debug("FeedbackService linked to ChatService")
 
     async def chat(
         self,
         settings: Setting,
         memory: Memory,
-        request_tools: List[RequestTool] = None,
-        token_counter: Optional[TokenCounter] = None,
-    ) -> Tuple[Memory, TokenCounter]:
+        request_tools: Optional[List[RequestTool]] = None,
+    ) -> Memory:
         """
         执行聊天流程
 
@@ -78,16 +96,11 @@ class ChatService:
             settings: 设置对象
             memory: 记忆对象
             request_tools: 请求工具列表
-            token_counter: token计数器
-
         Returns:
-            Tuple[Memory, TokenCounter]: 更新后的记忆和token计数器
+            Memory: 更新后的记忆
         """
         if request_tools is None:
             request_tools = []
-
-        if token_counter is None:
-            token_counter = TokenCounter()
 
         logger.info(f"Starting chat for agent: {settings.agent_name}")
 
@@ -101,19 +114,19 @@ class ChatService:
 
         # Step 0: 初始化记忆
         memory = await self._initialize_memory_if_needed(
-            settings, memory, send_message_to_user, token_counter
+            settings, memory, send_message_to_user
         )
 
         # 如果是初始化步骤，直接返回
         if len(memory.history) == 1 and not memory.history[0].actions[0].result:
-            return memory, token_counter
+            return memory
 
         # Step 1: 执行动作
         memory = await self._execute_actions(memory, tools)
 
         # Step 2: 选择下一个状态
         current_state, state_feedbacks = await self._select_next_state(
-            settings, memory, token_counter
+            settings, memory
         )
         memory.history[-1].state_feedbacks = state_feedbacks
 
@@ -123,21 +136,21 @@ class ChatService:
         )
 
         memory = await self._select_next_actions(
-            settings, memory, tools, current_state, action_feedbacks, token_counter
+            settings, memory, tools, current_state, action_feedbacks
         )
         memory.history[-1].action_feedbacks = action_feedbacks
 
         logger.info(f"Chat completed for agent: {settings.agent_name}")
-        return memory, token_counter
+        return memory
 
     async def chat_step(
         self,
         user_message: str = "",
         edited_last_response: str = "",
         recall_last_user_message: bool = False,
-        settings: Setting = None,
-        memory: Memory = None,
-        request_tools: List[RequestTool] = None,
+        settings: Optional[Setting] = None,
+        memory: Optional[Memory] = None,
+        request_tools: Optional[List[RequestTool]] = None,
     ) -> dict:
         """
         高级聊天步骤，集成自ChatAgent的逻辑
@@ -168,7 +181,6 @@ class ChatService:
         logger.info(f"Starting chat step for agent {settings.agent_name}")
 
         try:
-            token_counter = TokenCounter()
 
             # Step 1: 处理撤回逻辑
             message_tool_name = "send_message_to_user"
@@ -185,8 +197,8 @@ class ChatService:
 
             # Step 2: 检查记忆是否为空
             if not memory.history:
-                memory, token_counter = await self.chat(
-                    settings, memory, request_tools, token_counter
+                memory = await self.chat(
+                    settings, memory, request_tools
                 )
 
             memory, send_msg_action_idx = self._remove_duplicate_send_message_actions(
@@ -194,17 +206,15 @@ class ChatService:
             )
 
             # Step 3: 处理消息编辑和用户输入
-            if send_msg_action_idx is not None:  # 如果存在 send_message_to_user 动作
+            # 如果存在 send_message_to_user 动作
+            if send_msg_action_idx is not None:
                 if edited_last_response:
-                    memory.history[-1].actions[send_msg_action_idx].arguments = {
-                        "agent_message": edited_last_response
-                    }
-                memory.history[-1].actions[send_msg_action_idx].result = {
-                    "user_message": user_message
-                }
-            elif (
-                edited_last_response or user_message
-            ):  # 如果没有现存的 send_message_to_user 动作且有新消息
+                    action = memory.history[-1].actions[send_msg_action_idx]
+                    action.arguments = {"agent_message": edited_last_response}
+                action = memory.history[-1].actions[send_msg_action_idx]
+                action.result = {"user_message": user_message}
+            # 如果没有现存的 send_message_to_user 动作且有新消息
+            elif edited_last_response or user_message:
                 memory.history[-1].actions.append(
                     V2Action(
                         name=message_tool_name,
@@ -215,14 +225,15 @@ class ChatService:
                 send_msg_action_idx = len(memory.history[-1].actions) - 1
 
             # Step 4: 生成对话响应
-            memory, token_counter = await self.chat(
-                settings, memory, request_tools, token_counter
+            memory = await self.chat(
+                settings, memory, request_tools
             )
             memory, send_msg_action_idx = self._remove_duplicate_send_message_actions(
                 memory, message_tool_name
             )
 
-            # Step 5: 如果有多个动作且存在 send_message_to_user，移除 send_message_to_user 动作
+            # Step 5: 如果有多个动作且存在 send_message_to_user，
+            # 移除 send_message_to_user 动作
             if send_msg_action_idx is not None and len(memory.history[-1].actions) > 1:
                 del memory.history[-1].actions[send_msg_action_idx]
                 send_msg_action_idx = None
@@ -230,23 +241,20 @@ class ChatService:
             # Step 6: 创建响应
             response = ""
             if send_msg_action_idx is not None:
-                response = (
-                    memory.history[-1]
-                    .actions[send_msg_action_idx]
-                    .arguments.get("agent_message", "")
-                )
+                action = memory.history[-1].actions[send_msg_action_idx]
+                response = (action.arguments or {}).get("agent_message", "")
 
             result = {
                 "response": response,
                 "memory": memory,
                 "result_type": "Success",
-                "llm_calling_times": token_counter.llm_calling_times,
-                "total_input_token": token_counter.total_input_token,
-                "total_output_token": token_counter.total_output_token,
+                "llm_calling_times": 0,
+                "total_input_token": 0,
+                "total_output_token": 0,
             }
 
             logger.info(
-                f"Chat step completed successfully for agent {settings.agent_name}"
+                f"Chat step completed successfully for " f"agent {settings.agent_name}"
             )
             return result
 
@@ -258,7 +266,7 @@ class ChatService:
 
     def _remove_duplicate_send_message_actions(
         self, memory: Memory, message_tool_name: str
-    ):
+    ) -> Tuple[Memory, Optional[int]]:
         """
         从最后的记忆历史中移除重复的 'send_message_to_user' 动作
         """
@@ -273,7 +281,8 @@ class ChatService:
 
         if len(send_msg_action_idx_list) > 1:
             logger.warning(
-                "Multiple 'send_message_to_user' actions found in the last memory history. Only the first one will be used."
+                "Multiple 'send_message_to_user' actions found in the last "
+                "memory history. Only the first one will be used."
             )
             # 只保留第一个 send_message_to_user 动作
             for i in sorted(send_msg_action_idx_list[1:], reverse=True):
@@ -287,7 +296,6 @@ class ChatService:
         settings: Setting,
         memory: Memory,
         send_message_to_user: SendMessageToUser,
-        token_counter: TokenCounter,
     ) -> Memory:
         """初始化记忆（如果需要）"""
         if not memory.history:
@@ -313,7 +321,7 @@ class ChatService:
         return memory
 
     async def _select_next_state(
-        self, settings: Setting, memory: Memory, token_counter: TokenCounter
+        self, settings: Setting, memory: Memory
     ) -> Tuple:
         """选择下一个状态"""
         logger.debug("Selecting next state")
@@ -331,12 +339,11 @@ class ChatService:
                 settings=settings,
                 memory=memory,
                 feedbacks=state_feedbacks,
-                token_counter=token_counter,
             )
         else:
             # 直接使用NewStateAgent创建新状态
             current_state = await self.new_state_agent.step(
-                settings=settings, memory=memory, token_counter=token_counter
+                settings=settings, memory=memory
             )
 
         return current_state, state_feedbacks
@@ -352,22 +359,27 @@ class ChatService:
             TAG_PREFIX_OBSERVATION_NAME + memory.history[-1].actions[0].name
         ]
 
-        feedback_service = self._get_feedback_service(settings.vector_db_url)
-        state_feedbacks = await feedback_service.query_feedbacks(
-            settings=FeedbackSetting(
-                vector_db_url=settings.vector_db_url,
-                top_k=settings.top_k,
-                agent_name=settings.agent_name,
-            ),
-            query=json.dumps(memory.history[-1].actions[0].result, ensure_ascii=False),
-            tags=observation_tag,
-        )
+        # 查询状态反馈（如果有FeedbackService链接）
+        state_feedbacks = []
+        if self.feedback_service:
+            state_feedbacks = await self.feedback_service.query_feedbacks(
+                settings=FeedbackSetting(
+                    vector_db_url=settings.vector_db_url,
+                    top_k=settings.top_k,
+                    agent_name=settings.agent_name,
+                    embedding_api_key=settings.embedding_api_key or "",
+                ),
+                query=json.dumps(
+                    memory.history[-1].actions[0].result, ensure_ascii=False
+                ),
+                tags=observation_tag,
+            )
 
         logger.debug(f"Retrieved {len(state_feedbacks)} state feedbacks")
         return state_feedbacks
 
     async def _get_action_feedbacks(
-        self, settings: Setting, memory: Memory, current_state
+        self, settings: Setting, memory: Memory, current_state: "State"
     ) -> List:
         """获取动作反馈"""
         action_feedbacks = []
@@ -384,18 +396,21 @@ class ChatService:
                 else []
             )
 
-            feedback_service = self._get_feedback_service(settings.vector_db_url)
-            action_feedbacks = await feedback_service.query_feedbacks(
-                settings=FeedbackSetting(
-                    vector_db_url=settings.vector_db_url,
-                    top_k=settings.top_k,
-                    agent_name=settings.agent_name,
-                ),
-                query=json.dumps(
-                    memory.history[-1].actions[0].result, ensure_ascii=False
-                ),
-                tags=observation_tag + state_tag,
-            )
+            # 查询动作反馈（如果有FeedbackService链接）
+            action_feedbacks = []
+            if self.feedback_service:
+                action_feedbacks = await self.feedback_service.query_feedbacks(
+                    settings=FeedbackSetting(
+                        vector_db_url=settings.vector_db_url,
+                        top_k=settings.top_k,
+                        agent_name=settings.agent_name,
+                        embedding_api_key=settings.embedding_api_key or "",
+                    ),
+                    query=json.dumps(
+                        memory.history[-1].actions[0].result, ensure_ascii=False
+                    ),
+                    tags=observation_tag + state_tag,
+                )
 
             logger.debug(f"Retrieved {len(action_feedbacks)} action feedbacks")
 
@@ -406,9 +421,8 @@ class ChatService:
         settings: Setting,
         memory: Memory,
         tools: List,
-        current_state,
+        current_state: "State",
         feedbacks: List,
-        token_counter: TokenCounter,
     ) -> Memory:
         """选择下一个动作"""
         logger.debug("Selecting next actions using SelectActionsAgent")
@@ -419,7 +433,6 @@ class ChatService:
             tools=tools,
             current_state=current_state,
             feedbacks=feedbacks,
-            token_counter=token_counter,
         )
 
         return memory
@@ -427,193 +440,8 @@ class ChatService:
     def get_stats(self) -> dict:
         """获取服务统计信息"""
         return {
-            "service_type": "ChatService",
+            "service_type": "ChatService (Dynamic)",
+            "mode": "stateless_dynamic_agents",
             "action_executor_stats": self.action_executor.get_stats(),
-            "select_actions_agent": type(self.select_actions_agent).__name__,
-            "state_select_agent": type(self.state_select_agent).__name__,
-            "new_state_agent": type(self.new_state_agent).__name__,
-            "llm_engine": type(self.llm_engine).__name__,
+            "description": "Agents and LLM engine created dynamically per request",
         }
-
-    # ===== V2 API Service Methods (from ChatV2Service) =====
-
-    def _get_feedback_service(self, vector_db_url: str) -> FeedbackService:
-        """
-        获取FeedbackService实例
-
-        Args:
-            vector_db_url: 向量数据库URL
-
-        Returns:
-            FeedbackService: 反馈服务实例
-        """
-        # 创建WeaviateClient
-        weaviate_client = WeaviateClient(
-            url=vector_db_url,
-            timeout=30
-        )
-
-        # 创建OpenAI嵌入客户端
-        embedding_client = OpenAIEmbeddingClient()
-
-        # 创建FeedbackService
-        return FeedbackService(
-            weaviate_client=weaviate_client,
-            embedding_client=embedding_client
-        )
-
-    async def generate_chat(self, request: ChatRequest) -> ChatResponse:
-        """
-        生成聊天响应
-
-        Args:
-            request: 聊天请求
-
-        Returns:
-            ChatResponse: 聊天响应
-        """
-        try:
-            logger.info(f"Processing chat request for agent: {request.settings.agent_name}")
-
-            # 将请求转换为ChatService的格式
-            settings = Setting(**request.settings.model_dump())
-            memory = Memory(**request.memory.model_dump())
-
-            # 转换request_tools
-            request_tools = []
-            for tool_data in request.request_tools:
-                request_tool = RequestTool(**tool_data)
-                request_tools.append(request_tool)
-
-            # 调用ChatService的chat_step方法
-            result = await self.chat_step(
-                user_message=request.user_message,
-                edited_last_response=request.edited_last_response,
-                recall_last_user_message=request.recall_last_user_message,
-                settings=settings,
-                memory=memory,
-                request_tools=request_tools
-            )
-
-            # 构建响应
-            response = ChatResponse(
-                response=result["response"],
-                memory=result["memory"].model_dump(),
-                result_type=result["result_type"],
-                llm_calling_times=result["llm_calling_times"],
-                total_input_token=result["total_input_token"],
-                total_output_token=result["total_output_token"]
-            )
-
-            logger.info(f"Chat request completed for agent: {request.settings.agent_name}")
-            return response
-
-        except Exception as e:
-            logger.error(f"Error in generate_chat: {e}")
-            raise
-
-    async def learn_from_feedback(self, request: LearnRequest) -> LearnResponse:
-        """
-        从反馈中学习
-
-        Args:
-            request: 学习请求
-
-        Returns:
-            LearnResponse: 学习响应
-        """
-        try:
-            logger.info(f"Processing learn request for agent: {request.settings.agent_name}")
-
-            # 转换为FeedbackService的格式
-            feedback_setting = FeedbackSetting(
-                vector_db_url=request.settings.vector_db_url,
-                agent_name=request.settings.agent_name
-            )
-
-            # 转换feedbacks
-            feedbacks = []
-            for feedback_data in request.feedbacks:
-                feedback = Feedback(**feedback_data.model_dump())
-                feedbacks.append(feedback)
-
-            # 获取FeedbackService实例并调用learn方法
-            feedback_service = self._get_feedback_service(request.settings.vector_db_url)
-            result = await feedback_service.learn(
-                settings=feedback_setting,
-                feedbacks=feedbacks
-            )
-
-            # 构建响应
-            response = LearnResponse(
-                result_type="Success",
-                learned_count=result.get("learned_count", len(feedbacks)),
-                message=result.get("message", "Learning completed successfully")
-            )
-
-            logger.info(f"Learn request completed for agent: {request.settings.agent_name}")
-            return response
-
-        except Exception as e:
-            logger.error(f"Error in learn_from_feedback: {e}")
-            raise
-
-    async def get_all_feedbacks(self, param: GetFeedbackParam) -> List[Feedback]:
-        """
-        获取所有反馈
-
-        Args:
-            param: 获取反馈参数
-
-        Returns:
-            List[Feedback]: 反馈列表
-        """
-        try:
-            logger.info(f"Getting feedbacks for agent: {param.agent_name}")
-
-            # 转换为FeedbackService的格式
-            feedback_setting = FeedbackSetting(
-                vector_db_url=param.vector_db_url,
-                agent_name=param.agent_name
-            )
-
-            # 获取FeedbackService实例并调用get_all方法
-            feedback_service = self._get_feedback_service(param.vector_db_url)
-            feedbacks = await feedback_service.get_all(
-                settings=feedback_setting,
-                offset=param.offset,
-                limit=param.limit
-            )
-
-            logger.info(f"Retrieved {len(feedbacks)} feedbacks for agent: {param.agent_name}")
-            return feedbacks
-
-        except Exception as e:
-            logger.error(f"Error in get_all_feedbacks: {e}")
-            raise
-
-    async def delete_all_feedbacks(self, param: DeleteFeedbackParam) -> None:
-        """
-        删除所有反馈
-
-        Args:
-            param: 删除反馈参数
-        """
-        try:
-            logger.info(f"Deleting feedbacks for agent: {param.agent_name}")
-
-            # 转换为FeedbackService的格式
-            feedback_setting = FeedbackSetting(
-                vector_db_url=param.vector_db_url,
-                agent_name=param.agent_name
-            )
-
-            # 获取FeedbackService实例并调用delete_all方法
-            feedback_service = self._get_feedback_service(param.vector_db_url)
-            result = await feedback_service.delete_all(settings=feedback_setting)
-
-            logger.info(f"Deleted feedbacks for agent: {param.agent_name}, result: {result}")
-
-        except Exception as e:
-            logger.error(f"Error in delete_all_feedbacks: {e}")
-            raise

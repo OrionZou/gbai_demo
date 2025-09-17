@@ -138,11 +138,19 @@ class WeaviateConfig(BaseModel):
     对应 weaviate_client.py 构造函数所需参数
     """
 
-    base_url: str = os.getenv("WEAVIATE_URL", "http://localhost:8080")
-    api_key: Optional[str] = os.getenv("WEAVIATE_API_KEY")
-    embedding_api_key: Optional[str] = os.getenv("EMBEDDING_API_KEY")
-    module_config: Dict[str, Any] = {}
-    timeout: int = int(os.getenv("WEAVIATE_TIMEOUT", "30"))
+    base_url: str = Field(
+        default_factory=lambda: os.getenv("WEAVIATE_URL", "http://localhost:8080")
+    )
+    api_key: Optional[str] = Field(
+        default_factory=lambda: os.getenv("WEAVIATE_API_KEY")
+    )
+    embedding_api_key: Optional[str] = Field(
+        default_factory=lambda: os.getenv("EMBEDDING_API_KEY")
+    )
+    module_config: Dict[str, Any] = Text2VecOpenAIConfig().to_module_config()
+    timeout: int = Field(
+        default_factory=lambda: int(os.getenv("WEAVIATE_TIMEOUT", "30"))
+    )
 
 
 class SettingLoader:
@@ -150,14 +158,14 @@ class SettingLoader:
 
     _llm_setting: Optional[LLMSetting] = None
 
-    _embedding_config: Optional[EmbeddingSetting] = None
+    _embedding_setting: Optional[EmbeddingSetting] = None
     _weaviate_config: Optional[WeaviateConfig] = None
 
     @classmethod
-    def get_embedding_config(cls) -> EmbeddingSetting:
-        if cls._embedding_config is None:
-            cls._embedding_config = EmbeddingSetting()
-        return cls._embedding_config
+    def get_embedding_setting(cls) -> EmbeddingSetting:
+        if cls._embedding_setting is None:
+            cls._embedding_setting = EmbeddingSetting()
+        return cls._embedding_setting
 
     @classmethod
     def get_weaviate_config(cls) -> WeaviateConfig:

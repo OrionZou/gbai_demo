@@ -223,10 +223,6 @@ class StateMachine(BaseModel):
         ]
 
 
-# TokenCounter moved to agent_runtime.stats.token_counter
-
-
-# TokenCounter moved to agent_runtime.stats.token_counter
 
 
 # 导出所有公共类和函数

@@ -5,32 +5,12 @@ API 请求和响应格式统一定义
 与核心数据结构分离，专门用于API接口定义。
 """
 
-from typing import List, Dict, Any, Optional
-from pydantic import BaseModel, Field
+from typing import List, Dict, Any, Optional, Union
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from agent_runtime.data_format.qa_format import QAItem, QAList, BQAList
 from agent_runtime.data_format.ospa import OSPA
-from agent_runtime.data_format.fsm import StateMachine
-
-
-# ======================= Core Data Models ==========================
-
-
-class Setting(BaseModel):
-    """聊天配置类 - 用于Chat API接口"""
-    api_key: str
-    chat_model: str = "gpt-4o-mini"
-    base_url: str = "https://api.openai.com/v1/"
-    top_p: float = 1.0
-    temperature: float = 1.0
-
-    top_k: int = 5
-    vector_db_url: str = ""
-    agent_name: str
-
-    global_prompt: str = ""
-    max_history_len: int = 128
-    state_machine: StateMachine = StateMachine()
+from agent_runtime.data_format.message import Message
 
 
 # ======================= LLM API Models ==========================
@@ -130,18 +110,110 @@ class BackwardResponse(BaseModel):
 
 from agent_runtime.data_format.fsm import Memory
 from agent_runtime.data_format.tool import RequestTool
-from agent_runtime.data_format.feedback import Feedback, FeedbackSetting
+from agent_runtime.data_format.feedback import Feedback
+from agent_runtime.data_format.fsm import StateMachine
+
+
+class Setting(BaseModel):
+    """聊天配置类 - 用于Chat API接口"""
+
+    api_key: str
+    chat_model: str = "gpt-4o-mini"
+    base_url: str = "https://api.openai.com/v1/"
+    top_p: float = 1.0
+    temperature: float = 1.0
+
+    embedding_api_key: Optional[str] = None
+    embedding_model: str = "text-embedding-3-large"
+    embedding_base_url: str = "https://api.openai.com/v1/"
+    embedding_vector_dim: int = 1024
+
+    top_k: int = 5
+    vector_db_url: str = ""
+    agent_name: str
+
+    global_prompt: str = ""
+    max_history_len: int = 128
+    state_machine: StateMachine = StateMachine()
+
+    @model_validator(mode="after")
+    def default_embedding_api_key(self):
+        if self.embedding_api_key is None:
+            self.embedding_api_key = self.api_key
+        return self
+
+
+class FeedbackSetting(BaseModel):
+    """Runtime configuration for the feedback subsystem."""
+
+    vector_db_url: str  # e.g. "http://weaviate.my-cluster.com:8080"
+    top_k: int = 5
+    agent_name: str
+
+    embedding_api_key: str
+    embedding_model: str = ""
+    embedding_base_url: str = "https://api.openai.com/v1/"
+    embedding_vector_dim: int = 1024
 
 
 class ChatRequest(BaseModel):
     """聊天请求格式"""
 
-    user_message: str = ""
+    user_message: Union[str, List[Message]] = Field(
+        ..., description="用户消息：可以是字符串（向后兼容）或 ChatML 消息列表格式"
+    )
     edited_last_response: str = ""
     recall_last_user_message: bool = False
     settings: Setting
     memory: Memory
     request_tools: List[RequestTool] = []
+
+    @field_validator("user_message")
+    @classmethod
+    def validate_user_message(cls, v):
+        """验证并规范化 user_message 格式"""
+        if isinstance(v, str):
+            # 字符串格式，转换为 ChatML 格式
+            return [Message(role="user", content=v)]
+        elif isinstance(v, list):
+            # 已经是列表格式，验证每个元素
+            if not v:
+                raise ValueError("user_message list cannot be empty")
+
+            # 如果是字典列表，转换为 Message 对象
+            chat_messages = []
+            for item in v:
+                if isinstance(item, dict):
+                    chat_messages.append(Message(**item))
+                elif isinstance(item, Message):
+                    chat_messages.append(item)
+                else:
+                    raise ValueError("Invalid message format in user_message list")
+
+            return chat_messages
+        else:
+            raise ValueError("user_message must be string or list of Message objects")
+
+    def get_messages(self) -> List[Message]:
+        """获取标准化的消息列表"""
+        return (
+            self.user_message
+            if isinstance(self.user_message, list)
+            else [Message(role="user", content=self.user_message)]
+        )
+
+    def get_user_content(self) -> str:
+        """获取用户消息内容（向后兼容）"""
+        if isinstance(self.user_message, str):
+            return self.user_message
+        elif isinstance(self.user_message, list) and self.user_message:
+            # 返回最后一个用户消息的内容
+            user_messages = [msg for msg in self.user_message if msg.role == "user"]
+            if user_messages:
+                return user_messages[-1].content
+            # 如果没有用户消息，返回最后一个消息的内容
+            return self.user_message[-1].content
+        return ""
 
 
 class ChatResponse(BaseModel):
@@ -251,6 +323,7 @@ class BQAExtractResponse(BaseModel):
 __all__ = [
     # Core Data Models
     "Setting",
+    "FeedbackSetting",
     # LLM API
     "LLMAskRequest",
     "LLMAskResponse",

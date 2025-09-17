@@ -7,7 +7,7 @@ BQA拆解服务
 
 import time
 import asyncio
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from pydantic import BaseModel, Field
 from agent_runtime.clients.openai_llm_client import LLM
 from agent_runtime.agents.bqa_agent import BQAAgent

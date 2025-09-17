@@ -11,7 +11,8 @@ from typing import List, Optional
 
 from agent_runtime.clients.weaviate_client import WeaviateClient
 from agent_runtime.clients.openai_embedding_client import OpenAIEmbeddingClient
-from agent_runtime.data_format.feedback import Feedback, FeedbackSetting
+from agent_runtime.data_format.feedback import Feedback
+from agent_runtime.interface.api_models import FeedbackSetting
 from agent_runtime.logging.logger import logger
 
 
@@ -88,9 +89,32 @@ class FeedbackService:
                 },
             ]
 
+            # vector_config = {
+            #     "default": {
+            #         "vectorizer": {},  # Manual vectors (empty object)
+            #         "vectorIndexType": "hnsw",
+            #         "vectorIndexConfig": {
+            #             "efConstruction": 128,
+            #             "maxConnections": 64,
+            #             "distance": "cosine",
+            #         },
+            #     }
+            # }
+
+            # await asyncio.to_thread(
+            #     self.client.create_collection,
+            #     class_name=collection_name,
+            #     properties=properties,
+            #     description=f"Feedback collection for agent: {agent_name}",
+            #     vector_config=vector_config,
+            # )
+
+            # 创建集合，使用text2vec-openai模块作为vectorizer
             vector_config = {
                 "default": {
-                    "vectorizer": "none",  # Manual vectors
+                    "vectorizer": {
+                        "text2vec-openai": {}
+                    },
                     "vectorIndexType": "hnsw",
                     "vectorIndexConfig": {
                         "efConstruction": 128,
@@ -322,7 +346,7 @@ class FeedbackService:
             result = await asyncio.to_thread(
                 self.client.list_objects,
                 class_name=collection_name,
-                limit=20000,  # 批量删除
+                limit=10000,  # 批量删除
             )
 
             if result and "objects" in result:
@@ -357,7 +381,7 @@ class FeedbackService:
             result = await asyncio.to_thread(
                 self.client.list_objects,
                 class_name=collection_name,
-                limit=20000,  # 大数量获取计数
+                limit=10000,  # 大数量获取计数
             )
 
             count = 0

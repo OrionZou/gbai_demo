@@ -11,7 +11,8 @@ from pydantic import BaseModel
 from agent_runtime.services.feedback_service import FeedbackService
 from agent_runtime.clients.weaviate_client import WeaviateClient
 from agent_runtime.clients.openai_embedding_client import OpenAIEmbeddingClient
-from agent_runtime.data_format.feedback import Feedback, FeedbackSetting
+from agent_runtime.data_format.feedback import Feedback
+from agent_runtime.interface.api_models import FeedbackSetting
 from agent_runtime.logging.logger import logger
 
 

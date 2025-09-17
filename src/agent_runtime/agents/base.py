@@ -138,14 +138,14 @@ class BaseAgent(ABC):
     def update_all_agents_llm_engine(cls, new_llm_engine: LLM) -> None:
         """
         更新所有已创建的Agent实例的LLM引擎
-        
+
         Args:
             new_llm_engine: 新的LLM客户端引擎
         """
         with cls._lock:
             updated_count = 0
             for agent_name, agent_instance in cls._instances.items():
-                if hasattr(agent_instance, 'update_llm_engine'):
+                if hasattr(agent_instance, "update_llm_engine"):
                     agent_instance.update_llm_engine(new_llm_engine)
                     updated_count += 1
             logger.info(f"Updated LLM engine for {updated_count} agent instances")
@@ -154,7 +154,7 @@ class BaseAgent(ABC):
     def get_all_agent_instances(cls) -> Dict[str, Any]:
         """
         获取所有已创建的Agent实例信息
-        
+
         Returns:
             Dict[str, Any]: Agent名称到实例信息的映射
         """
@@ -162,10 +162,10 @@ class BaseAgent(ABC):
             instances_info = {}
             for agent_name, agent_instance in cls._instances.items():
                 instances_info[agent_name] = {
-                    'class_name': agent_instance.__class__.__name__,
-                    'agent_name': agent_instance.agent_name,
-                    'llm_model': getattr(agent_instance.llm_engine, 'model', 'unknown'),
-                    'initialized': agent_name in cls._initialized
+                    "class_name": agent_instance.__class__.__name__,
+                    "agent_name": agent_instance.agent_name,
+                    "llm_model": getattr(agent_instance.llm_engine, "model", "unknown"),
+                    "initialized": agent_name in cls._initialized,
                 }
             return instances_info
 

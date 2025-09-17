@@ -14,7 +14,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 from agent_runtime.clients.weaviate_client import WeaviateClient
 from agent_runtime.clients.openai_embedding_client import OpenAIEmbeddingClient
 from agent_runtime.services.feedback_service import FeedbackService
-from agent_runtime.data_format.feedback import Feedback, FeedbackSetting
+from agent_runtime.data_format.feedback import Feedback
+from agent_runtime.interface.api_models import FeedbackSetting
 
 
 async def demo_openai_embedding_integration():

@@ -17,7 +17,6 @@ from typing import Optional, List, Tuple, TYPE_CHECKING
 
 from agent_runtime.data_format.tool import RequestTool
 from agent_runtime.data_format.fsm import Memory
-from agent_runtime.stats import TokenCounter
 
 if TYPE_CHECKING:
     from agent_runtime.interface.api_models import Setting
@@ -27,8 +26,7 @@ async def chat(
     settings: "Setting",
     memory: Memory,
     request_tools: List[RequestTool] = [],
-    token_counter: Optional[TokenCounter] = None,
-) -> Tuple[Memory, TokenCounter]:
+) -> Memory:
     """
     聊天功能 - 使用ChatService重构后的实现
 
@@ -40,12 +38,12 @@ async def chat(
     chat_service = ChatService()
 
     # 调用重构后的chat方法
-    return await chat_service.chat(
+    memory, _ = await chat_service.chat(
         settings=settings,
         memory=memory,
         request_tools=request_tools,
-        token_counter=token_counter
     )
+    return memory
 
 
 __all__ = ["chat"]

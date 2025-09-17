@@ -1,7 +1,9 @@
-from workbook_ai.infrastructure.clients.openai_embedding_client import OpenAIEmbeddingClient
+from workbook_ai.infrastructure.clients.openai_embedding_client import (
+    OpenAIEmbeddingClient,
+)
 from workbook_ai.infrastructure.config.loader import ConfigLoader
 
-embed_client_config = ConfigLoader.get_embedding_config()
+embed_client_config = ConfigLoader.get_embedding_setting()
 
 
 async def main():
@@ -15,4 +17,5 @@ async def main():
 
 if __name__ == "__main__":
     import asyncio
+
     asyncio.run(main())

@@ -81,7 +81,7 @@ respond appropriately to the user's needs."""
 
         Args:
             context: 可选的外部上下文，如果为None则创建临时context
-            **kwargs: 包含settings, memory, token_counter等参数
+            **kwargs: 包含settings, memory等参数
 
         Returns:
             State: 新创建的状态
@@ -92,7 +92,6 @@ respond appropriately to the user's needs."""
         # 提取必需参数
         settings = kwargs.get('settings')
         memory = kwargs.get('memory')
-        token_counter = kwargs.get('token_counter')
 
         if not settings or not memory:
             raise ValueError("settings and memory are required")
@@ -121,11 +120,6 @@ respond appropriately to the user's needs."""
                 temperature=getattr(settings, 'temperature', 1.0),
             )
 
-            # 更新token计数器
-            if token_counter:
-                token_counter.llm_calling_times += 1
-                # 注意：LLM类的ask方法可能没有直接返回token信息
-                # 这里需要根据实际LLM实现来调整
 
             # 创建新状态
             new_state = State(
