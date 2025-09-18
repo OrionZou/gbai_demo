@@ -295,7 +295,6 @@ class OSPAProcessor:
                         ) and len(gen_o) > 10 and len(gen_a) > 10  # 避免短文本误匹配
 
                         if exact_match or normalized_match or contains_match:
-                            print(f"[DEBUG] Found match for item {item.no}: exact={exact_match}, normalized={normalized_match}, contains={contains_match}")
 
                             # 获取原始提示词
                             original_prompt = gen_item.get('p', '')
@@ -318,7 +317,6 @@ class OSPAProcessor:
                                     S=gen_item.get('s', ''),
                                     p=enhanced_prompt)
                                 updated_count += 1
-                                print(f"[DEBUG] Updated item {item.no} (覆盖所有字段): S='{gen_item.get('s', '')[:50]}...', p='{enhanced_prompt[:50]}...'")
                             else:  # "只更新空白字段"
                                 # 只更新空白字段
                                 updates = {}
@@ -326,31 +324,22 @@ class OSPAProcessor:
                                 # 检查S字段是否为空
                                 if not item.S.strip():
                                     updates['S'] = gen_item.get('s', '')
-                                    print(f"[DEBUG] Item {item.no} S field is empty, will update with: '{gen_item.get('s', '')[:50]}...'")
-                                else:
-                                    print(f"[DEBUG] Item {item.no} S field already has value: '{item.S[:50]}...', skipping")
 
                                 # 检查p字段是否为空
                                 if not item.p.strip():
                                     updates['p'] = enhanced_prompt
-                                    print(f"[DEBUG] Item {item.no} p field is empty, will update with: '{enhanced_prompt[:50]}...'")
-                                else:
-                                    print(f"[DEBUG] Item {item.no} p field already has value: '{item.p[:50]}...', skipping")
 
                                 if updates:
                                     manager.update_item_by_no(item.no, **updates)
                                     updated_count += 1
-                                    print(f"[DEBUG] Updated item {item.no} (只更新空白字段): {list(updates.keys())}")
                                 else:
                                     skipped_count += 1
-                                    print(f"[DEBUG] Skipped item {item.no} (只更新空白字段): no empty fields to update")
 
                             matched = True
                             break
 
-                    # 如果没有找到匹配项，记录调试信息
+                    # 如果没有找到匹配项
                     if not matched:
-                        print(f"[DEBUG] No match found for item {item.no}: O='{item.O[:50]}...', A='{item.A[:50]}...'")
                         skipped_count += 1
 
                 return {
