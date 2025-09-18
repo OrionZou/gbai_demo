@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  weaviate:
+    image: docker.1ms.run/semitechnologies/weaviate:1.32.2
+    container_name: weaviate
+    environment:
+      - AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED=true
+      - AUTHORIZATION_ADMIN_LIST_ENABLED=false
+      - LOG_LEVEL=info
+      - PERSISTENCE_DATA_PATH=/data
+      - ENABLE_MODULES=text2vec-openai
+      - QUERY_DEFAULTS_LIMIT=100
+      - QUERY_MAXIMUM_RESULTS=10000
+      - PERSISTENCE_MEMTABLES_FLUSH_IDLE_AFTER_SECONDS=30
+      - DEFAULT_VECTORIZER_MODULE=text2vec-openai
+      - OPENAI_APIKEY=${EMBEDDING_API_KEY}
+      - TEXT2VEC_OPENAI_MODEL=text-embedding-3-large
+      - TEXT2VEC_OPENAI_VECTORIZE_DIMENSIONS=3072
+    ports:
+      - "8080:8080"
+      - "50051:50051"
+    networks:
+      - agent-network
+    restart: unless-stopped
+  
+  streamlit:
+    build:
+      context: ../agent-streamlit
+      dockerfile: docker/Dockerfile
+    container_name: agent-streamlit
+    image: intelli-train/agent-streamlit:1.2.0
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    environment:
+      - AGENT_API_URL=http://agent:8011
+    depends_on:
+      - agent
+    networks:
+      - agent-network
+    restart: unless-stopped
+
+  agent:
+    build:
+      context: ./
+      dockerfile: dockerfiles/Dockerfile.agent_runtime
+    container_name: agent
+    image: intelli-train/agent:1.2.0
+    ports:
+      - "8011:8011"
+    env_file:
+      - .env
+    networks:
+      - agent-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8011/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  agent-network:
+    driver: bridge
