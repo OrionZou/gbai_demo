@@ -9,7 +9,6 @@ AI Agent Runtime System - 一个基于Python的智能代理运行时系统，提
 - [部署指南](#部署指南)
 - [开发指南](#开发指南)
 - [测试指南](#测试指南)
-- [API文档](#api文档)
 - [贡献指南](#贡献指南)
 
 ## 🏗️ 项目架构
@@ -100,27 +99,27 @@ poetry install
 
 ```bash
 # 复制环境配置文件
-cp .env.example .env
+cp .env.example .env #填写相关的key
 
-# 编辑配置文件，设置必要的API密钥
-# OPENAI_API_KEY=your_openai_api_key
-# WEAVIATE_URL=http://localhost:8855
-# NEO4J_URI=bolt://localhost:7687
 ```
 
-### 4. 启动服务
+### 4. 部署服务
 
+**docker compose 启动**
 ```bash
 # 启动数据库服务
 docker compose up -d
 
 # 验证服务状态
 docker compose ps
-
-# 启动后端API服务
+```
+**本地启动后端API服务**
+```
 python -m uvicorn agent_runtime.main:app --reload --host 0.0.0.0 --port 8011
+```
 
-# 启动前端界面 (新终端)
+**本地启动前端界面**
+```
 cd playground
 streamlit run app.py
 ```
@@ -155,19 +154,8 @@ docker compose -f docker-compose.prod.yml up -d
 docker compose ps
 ```
 
-### 生产环境配置
-
-1. **环境变量**
-```bash
-# 生产环境变量
-ENVIRONMENT=production
-LOG_LEVEL=INFO
-OPENAI_API_KEY=your_production_api_key
-WEAVIATE_URL=your_weaviate_url
-NEO4J_URI=your_neo4j_uri
-```
-
-2. **反向代理**
+3. **反向代理配置**
+位置：`reverse-proxy/nginx`
 ```nginx
 # Nginx配置示例
 upstream backend {
@@ -323,36 +311,6 @@ python your_demo.py
 # 注意：完成功能验证后请删除demo文件
 ```
 
-## 📚 API文档
-
-### 主要端点
-
-1. **聊天接口**
-   - `POST /chat/v1.5/completions` - 多模态聊天
-   - `POST /chat/completions` - 标准聊天
-
-2. **工具接口**
-   - `POST /tools/execute` - 工具执行
-   - `GET /tools/list` - 工具列表
-
-3. **状态管理**
-   - `GET /state/current` - 当前状态
-   - `POST /state/update` - 更新状态
-
-### 请求示例
-
-```python
-import httpx
-
-# 聊天请求
-response = httpx.post("http://localhost:8011/chat/v1.5/completions", json={
-    "messages": [
-        {"role": "user", "content": "Hello, how are you?"}
-    ],
-    "model": "gpt-4",
-    "stream": False
-})
-```
 
 ## 🤝 贡献指南
 
