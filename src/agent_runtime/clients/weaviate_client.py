@@ -4,7 +4,9 @@ import requests
 from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, Field
 
-from workbook_ai.infrastructure.logging.logger import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class WeaviateClientError(Exception):

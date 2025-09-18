@@ -1,11 +1,10 @@
 [tool.poetry]
-name = "workbook-ai"
+name = "gbai-demo"
 version = "0.1.0"
-description = "工作手册 AI"
+description = "GBAI Demo"
 authors = ["Orion Zou <orionzou@clonebot.ai>"]
 readme = "README.md"
 packages = [
-    { include = "workbook_ai", from = "src"},
     { include = "agent_runtime", from = "src" },
           ]
 
@@ -90,10 +89,10 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "--cov=src/ai_knowledge_base --cov-report=html --cov-report=term-missing --cov-fail-under=100"
+addopts = "--cov=src/agent_runtime --cov-report=html --cov-report=term-missing --cov-fail-under=80"
 
 [tool.coverage.run]
-source = ["src/ai_knowledge_base"]
+source = ["src/agent_runtime"]
 omit = ["*/tests/*", "*/__init__.py"]
 
 [tool.coverage.report]

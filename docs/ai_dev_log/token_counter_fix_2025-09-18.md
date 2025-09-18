@@ -1,4 +1,4 @@
-# Token Counter Fix - 2025-09-18
+# Token Counter Fix & 繁體中文化 - 2025-09-18
 
 ## Problem Description
 
@@ -136,15 +136,62 @@ python exps/demo_chat_examples.py
 2. **Explicit dependencies**: Make session ID dependencies explicit in method signatures
 3. **Error handling**: Add validation for session ID consistency
 
+## 繁體中文化更新 (Traditional Chinese Localization)
+
+### **完成的國際化工作**
+
+除了修復 token 計數問題外，本次更新還包含了完整的繁體中文化：
+
+#### **1. API 示例文檔繁體中文化**
+- **檔案**: `src/agent_runtime/interface/chat_api.py`
+- **更新內容**: 將所有 6 個聊天示例的內容改為繁體中文
+  - 用戶訊息和系統提示詞
+  - 狀態機名稱、場景和指令描述
+  - 工具名稱和描述
+  - API 文檔描述
+
+#### **2. 範例測試檔案繁體中文化**
+- **檔案**: `exps/demo_chat_examples.py`
+- **更新內容**:
+  - 所有測試函數的對話內容
+  - 提示詞和系統訊息
+  - 註解和文檔字串部分翻譯
+
+#### **3. 測試腳本繁體中文化**
+- **檔案**: `exps/test_token_counter_fix.py`
+- **更新內容**:
+  - 測試載荷中的提示詞和用戶訊息
+  - 文檔字串翻譯
+
+### **繁體中文化特色**
+
+1. **完整的使用者體驗**: 從 API 文檔到實際對話內容都使用繁體中文
+2. **保持技術準確性**: 專業術語使用恰當的繁體中文翻譯
+3. **文化適應性**: 對話風格符合繁體中文使用習慣
+4. **功能完整性**: 所有原有功能（狀態機、工具調用等）完全保留
+
+### **更新的示例類型**
+
+- **OpenAI String Format**: 基本字串格式聊天
+- **OpenAI ChatML Messages**: ChatML 訊息格式
+- **OpenAI Completed ChatML**: 完整範例（含狀態機和工具）
+- **Deepseek Completed ChatML**: Deepseek 完整範例
+- **DeepInfra Completed ChatML**: DeepInfra 完整範例
+- **OpenAI with Image**: 圖像處理聊天範例
+
 ## Related Issues
 
 This fix also improves:
 - **Debugging capability**: Better logging for troubleshooting token issues
 - **Code reliability**: Consistent session management across components
 - **Performance monitoring**: Accurate token usage tracking for cost analysis
+- **User Experience**: Complete Traditional Chinese support for Chinese-speaking users
+- **Documentation Quality**: Comprehensive examples in both English and Traditional Chinese
 
 ## Testing Notes
 
 - The fix maintains backward compatibility
 - No breaking changes to the API interface
 - Enhanced debugging capabilities for future issues
+- Traditional Chinese examples provide better user experience for Chinese-speaking developers
+- All functionality remains intact with improved localization
