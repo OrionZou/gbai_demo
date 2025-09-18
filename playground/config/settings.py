@@ -8,7 +8,7 @@ class AppConfig:
     """应用配置"""
     
     # API配置
-    DEFAULT_API_URL = "http://localhost:8011/agent"
+    DEFAULT_API_URL = "http://localhost:8011"
     API_TIMEOUT = 600
     
     # 并发配置
