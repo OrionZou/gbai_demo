@@ -241,7 +241,9 @@ class OSPAProcessor:
             max_level: int = 3,
             max_concurrent_llm: int = 10,
             overwrite_mode: str = "只更新空白字段",
-            chapter_structure: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+            chapter_structure: Optional[Dict[str, Any]] = None,
+            include_cases_in_prompt: bool = False,
+            max_cases_per_chapter: int = 0) -> Dict[str, Any]:
         """处理状态和提示词生成"""
         valid_items = manager.get_valid_items_for_backward()
 
@@ -267,6 +269,7 @@ class OSPAProcessor:
             # 更新管理器中的数据
             if result.get("ospa"):
                 generated_ospa = result["ospa"]
+                chapter_structure_data = result.get("chapter_structure")
                 updated_count = 0
                 skipped_count = 0
 
@@ -293,31 +296,44 @@ class OSPAProcessor:
 
                         if exact_match or normalized_match or contains_match:
                             print(f"[DEBUG] Found match for item {item.no}: exact={exact_match}, normalized={normalized_match}, contains={contains_match}")
-                            
+
+                            # 获取原始提示词
+                            original_prompt = gen_item.get('p', '')
+
+                            # 如果需要包含案例，增强提示词
+                            enhanced_prompt = original_prompt
+                            if include_cases_in_prompt and chapter_structure_data:
+                                enhanced_prompt = self._enhance_prompt_with_cases(
+                                    original_prompt,
+                                    gen_item.get('s', ''),  # 章节名称
+                                    chapter_structure_data,
+                                    max_cases_per_chapter
+                                )
+
                             # 根据覆盖模式决定是否更新
                             if overwrite_mode == "覆盖所有字段":
                                 # 直接覆盖所有字段
                                 manager.update_item_by_no(
                                     item.no,
                                     S=gen_item.get('s', ''),
-                                    p=gen_item.get('p', ''))
+                                    p=enhanced_prompt)
                                 updated_count += 1
-                                print(f"[DEBUG] Updated item {item.no} (覆盖所有字段): S='{gen_item.get('s', '')[:50]}...', p='{gen_item.get('p', '')[:50]}...'")
+                                print(f"[DEBUG] Updated item {item.no} (覆盖所有字段): S='{gen_item.get('s', '')[:50]}...', p='{enhanced_prompt[:50]}...'")
                             else:  # "只更新空白字段"
                                 # 只更新空白字段
                                 updates = {}
-                                
+
                                 # 检查S字段是否为空
                                 if not item.S.strip():
                                     updates['S'] = gen_item.get('s', '')
                                     print(f"[DEBUG] Item {item.no} S field is empty, will update with: '{gen_item.get('s', '')[:50]}...'")
                                 else:
                                     print(f"[DEBUG] Item {item.no} S field already has value: '{item.S[:50]}...', skipping")
-                                
+
                                 # 检查p字段是否为空
                                 if not item.p.strip():
-                                    updates['p'] = gen_item.get('p', '')
-                                    print(f"[DEBUG] Item {item.no} p field is empty, will update with: '{gen_item.get('p', '')[:50]}...'")
+                                    updates['p'] = enhanced_prompt
+                                    print(f"[DEBUG] Item {item.no} p field is empty, will update with: '{enhanced_prompt[:50]}...'")
                                 else:
                                     print(f"[DEBUG] Item {item.no} p field already has value: '{item.p[:50]}...', skipping")
 
@@ -328,10 +344,10 @@ class OSPAProcessor:
                                 else:
                                     skipped_count += 1
                                     print(f"[DEBUG] Skipped item {item.no} (只更新空白字段): no empty fields to update")
-                            
+
                             matched = True
                             break
-                    
+
                     # 如果没有找到匹配项，记录调试信息
                     if not matched:
                         print(f"[DEBUG] No match found for item {item.no}: O='{item.O[:50]}...', A='{item.A[:50]}...'")
@@ -357,6 +373,58 @@ class OSPAProcessor:
                 'error': f"状态提示词生成失败: {str(e)}",
                 'processed_count': len(valid_items)
             }
+
+    def _enhance_prompt_with_cases(
+            self,
+            original_prompt: str,
+            chapter_name: str,
+            chapter_structure: Dict[str, Any],
+            max_cases: int) -> str:
+        """使用章节案例增强提示词"""
+        if not chapter_structure or max_cases <= 0:
+            return original_prompt
+
+        # 查找匹配的章节节点
+        nodes = chapter_structure.get("nodes", {})
+        matching_node = None
+
+        # 通过章节名称查找节点
+        for node_id, node_data in nodes.items():
+            if node_data.get("title", "") == chapter_name:
+                matching_node = node_data
+                break
+
+        if not matching_node or not matching_node.get("related_qa_items"):
+            return original_prompt
+
+        # 获取相关案例
+        qa_items = matching_node.get("related_qa_items", [])
+        selected_cases = qa_items[:max_cases]  # 限制案例数量
+
+        if not selected_cases:
+            return original_prompt
+
+        # 构建增强的提示词
+        enhanced_prompt = original_prompt
+
+        # 添加分隔符和案例说明
+        enhanced_prompt += "\n\n## 相关案例参考\n"
+        enhanced_prompt += f"以下是{chapter_name}章节的相关案例，供参考理解：\n\n"
+
+        # 添加每个案例
+        for i, qa_item in enumerate(selected_cases, 1):
+            question = qa_item.get("question", "")
+            answer = qa_item.get("answer", "")
+
+            if question and answer:
+                enhanced_prompt += f"**案例 {i}：**\n"
+                enhanced_prompt += f"问题：{question}\n"
+                enhanced_prompt += f"答案：{answer}\n\n"
+
+        # 添加使用说明
+        enhanced_prompt += "请参考以上案例的回答风格和内容深度来回答用户问题。"
+
+        return enhanced_prompt
 
     def process_llm_generation(
             self,

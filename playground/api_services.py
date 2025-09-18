@@ -2,6 +2,7 @@
 API服务模块
 封装Agent Runtime API调用逻辑
 """
+
 import asyncio
 import aiohttp
 import requests
@@ -13,12 +14,12 @@ class APIClient:
     """API客户端基类"""
 
     def __init__(self, base_url: str):
-        self.base_url = base_url.rstrip('/')
+        self.base_url = base_url.rstrip("/")
 
     def check_connection(self) -> bool:
         """检查API连接状态"""
         try:
-            response = requests.get(f"{self.base_url}/docs", timeout=5)
+            response = requests.get(f"{self.base_url}/agent/docs", timeout=5)
             return response.status_code == 200
         except Exception:
             return False
@@ -29,14 +30,13 @@ class ConfigService(APIClient):
 
     def get_config(self) -> Dict[str, Any]:
         """获取当前配置"""
-        response = requests.get(f"{self.base_url}/config")
+        response = requests.get(f"{self.base_url}/agent/config")
         response.raise_for_status()
         return response.json()
 
     def update_config(self, config_data: Dict[str, Any]) -> Dict[str, Any]:
         """更新配置"""
-        response = requests.post(f"{self.base_url}/config",
-                                 json=config_data)
+        response = requests.post(f"{self.base_url}/agent/config", json=config_data)
         response.raise_for_status()
         return response.json()
 
@@ -50,12 +50,12 @@ class RewardService(APIClient):
             reward_data = {
                 "question": item.O,
                 "candidates": [item.A_prime],
-                "target_answer": item.A
+                "target_answer": item.A,
             }
 
-            response = requests.post(f"{self.base_url}/reward",
-                                     json=reward_data,
-                                     timeout=30)
+            response = requests.post(
+                f"{self.base_url}/agent/reward", json=reward_data, timeout=30
+            )
 
             if response.status_code == 200:
                 result = response.json()
@@ -64,34 +64,36 @@ class RewardService(APIClient):
             else:
                 return ProcessingResult(
                     success=False,
-                    error=f"HTTP {response.status_code}: {response.text[:100]}"
+                    error=f"HTTP {response.status_code}: {response.text[:100]}",
                 )
 
         except Exception as e:
             return ProcessingResult(success=False, error=f"请求失败: {str(e)}")
 
     async def process_multiple_items_concurrent(
-            self,
-            items: List[OSPAItem],
-            max_concurrent: int = 5,
-            progress_callback=None,
-            status_callback=None) -> Dict[int, ProcessingResult]:
+        self,
+        items: List[OSPAItem],
+        max_concurrent: int = 5,
+        progress_callback=None,
+        status_callback=None,
+    ) -> Dict[int, ProcessingResult]:
         """并发处理多个项目"""
 
         async def process_item_async(
-                session: aiohttp.ClientSession,
-                item: OSPAItem) -> Tuple[int, ProcessingResult]:
+            session: aiohttp.ClientSession, item: OSPAItem
+        ) -> Tuple[int, ProcessingResult]:
             try:
                 reward_data = {
                     "question": item.O,
                     "candidates": [item.A_prime],
-                    "target_answer": item.A
+                    "target_answer": item.A,
                 }
 
                 async with session.post(
-                        f"{self.base_url}/reward",
-                        json=reward_data,
-                        timeout=aiohttp.ClientTimeout(total=30)) as response:
+                    f"{self.base_url}/agent/reward",
+                    json=reward_data,
+                    timeout=aiohttp.ClientTimeout(total=30),
+                ) as response:
                     if response.status == 200:
                         result = await response.json()
 
@@ -103,18 +105,20 @@ class RewardService(APIClient):
                         error_text = await response.text()
                         return item.no, ProcessingResult(
                             success=False,
-                            error=f"HTTP {response.status}: "
-                            f"{error_text[:100]}")
+                            error=f"HTTP {response.status}: " f"{error_text[:100]}",
+                        )
 
             except Exception as e:
-                return item.no, ProcessingResult(success=False,
-                                                 error=f"请求失败: {str(e)}")
+                return item.no, ProcessingResult(
+                    success=False, error=f"请求失败: {str(e)}"
+                )
 
         # 使用信号量控制并发数
         semaphore = asyncio.Semaphore(max_concurrent)
 
-        async def process_with_semaphore(session: aiohttp.ClientSession,
-                                         item: OSPAItem):
+        async def process_with_semaphore(
+            session: aiohttp.ClientSession, item: OSPAItem
+        ):
             async with semaphore:
                 return await process_item_async(session, item)
 
@@ -144,17 +148,16 @@ class RewardService(APIClient):
         return results
 
     def process_multiple_items_sequential(
-            self,
-            items: List[OSPAItem],
-            progress_callback=None,
-            status_callback=None) -> Dict[int, ProcessingResult]:
+        self, items: List[OSPAItem], progress_callback=None, status_callback=None
+    ) -> Dict[int, ProcessingResult]:
         """顺序处理多个项目"""
         results = {}
 
         for i, item in enumerate(items):
             if status_callback:
-                status_callback(f"正在检测第 {item.no} 条数据的一致性... "
-                                f"({i+1}/{len(items)})")
+                status_callback(
+                    f"正在检测第 {item.no} 条数据的一致性... " f"({i+1}/{len(items)})"
+                )
 
             result = self.process_single_item(item)
             results[item.no] = result
@@ -168,33 +171,37 @@ class RewardService(APIClient):
 class BackwardService(APIClient):
     """Backward API服务"""
 
-    def process_qas(self,
-                    qas: List[Dict[str, str]],
-                    chapter_structure: Optional[Dict[str, Any]] = None,
-                    max_level: int = 3,
-                    max_concurrent_llm: int = 10) -> Dict[str, Any]:
+    def process_qas(
+        self,
+        qas: List[Dict[str, str]],
+        chapter_structure: Optional[Dict[str, Any]] = None,
+        max_level: int = 3,
+        max_concurrent_llm: int = 10,
+    ) -> Dict[str, Any]:
         """处理问答对，生成章节结构和OSPA数据"""
         try:
             # 转换QA格式从q/a到question/answer
             formatted_qas = []
             for qa in qas:
-                formatted_qas.append({
-                    "question": qa.get("q", qa.get("question", "")),
-                    "answer": qa.get("a", qa.get("answer", ""))
-                })
-            
+                formatted_qas.append(
+                    {
+                        "question": qa.get("q", qa.get("question", "")),
+                        "answer": qa.get("a", qa.get("answer", "")),
+                    }
+                )
+
             backward_data = {
                 "qas": formatted_qas,
                 "max_level": max_level,
-                "max_concurrent_llm": max_concurrent_llm
+                "max_concurrent_llm": max_concurrent_llm,
             }
-            
+
             if chapter_structure is not None:
                 backward_data["chapter_structure"] = chapter_structure
 
-            response = requests.post(f"{self.base_url}/backward",
-                                     json=backward_data,
-                                     timeout=600)
+            response = requests.post(
+                f"{self.base_url}/agent/backward", json=backward_data, timeout=600
+            )
 
             response.raise_for_status()
             return response.json()
@@ -206,9 +213,9 @@ class BackwardService(APIClient):
 class LLMService(APIClient):
     """LLM生成服务"""
 
-    def generate_answer(self,
-                        item: OSPAItem,
-                        temperature: float = 0.3) -> ProcessingResult:
+    def generate_answer(
+        self, item: OSPAItem, temperature: float = 0.3
+    ) -> ProcessingResult:
         """为单个项目生成答案"""
         try:
             # 构造消息格式
@@ -224,12 +231,12 @@ class LLMService(APIClient):
             llm_data = {
                 "messages": messages,
                 "temperature": temperature,
-                "stream": False
+                "stream": False,
             }
 
-            response = requests.post(f"{self.base_url}/llm/ask",
-                                     json=llm_data,
-                                     timeout=60)
+            response = requests.post(
+                f"{self.base_url}/agent/llm/ask", json=llm_data, timeout=60
+            )
 
             if response.status_code == 200:
                 result = response.json()
@@ -245,28 +252,30 @@ class LLMService(APIClient):
                     return ProcessingResult(
                         success=False,
                         error=f"LLM返回失败: success={result.get('success')}, "
-                        f"message={result.get('message', '未知错误')}")
+                        f"message={result.get('message', '未知错误')}",
+                    )
             else:
                 return ProcessingResult(
                     success=False,
-                    error=f"HTTP {response.status_code}: {response.text[:200]}"
+                    error=f"HTTP {response.status_code}: {response.text[:200]}",
                 )
 
         except Exception as e:
             return ProcessingResult(success=False, error=f"请求失败: {str(e)}")
 
     async def generate_answers_concurrent(
-            self,
-            items: List[OSPAItem],
-            temperature: float = 0.3,
-            max_concurrent: int = 5,
-            progress_callback=None,
-            status_callback=None) -> Dict[int, ProcessingResult]:
+        self,
+        items: List[OSPAItem],
+        temperature: float = 0.3,
+        max_concurrent: int = 5,
+        progress_callback=None,
+        status_callback=None,
+    ) -> Dict[int, ProcessingResult]:
         """并发生成多个答案"""
 
         async def generate_async(
-                session: aiohttp.ClientSession,
-                item: OSPAItem) -> Tuple[int, ProcessingResult]:
+            session: aiohttp.ClientSession, item: OSPAItem
+        ) -> Tuple[int, ProcessingResult]:
             try:
                 # 构造消息格式
                 messages = []
@@ -279,13 +288,14 @@ class LLMService(APIClient):
                 llm_data = {
                     "messages": messages,
                     "temperature": temperature,
-                    "stream": False
+                    "stream": False,
                 }
 
                 async with session.post(
-                        f"{self.base_url}/llm/ask",
-                        json=llm_data,
-                        timeout=aiohttp.ClientTimeout(total=60)) as response:
+                    f"{self.base_url}/agent/llm/ask",
+                    json=llm_data,
+                    timeout=aiohttp.ClientTimeout(total=60),
+                ) as response:
                     if response.status == 200:
                         result = await response.json()
                         success = result.get("success", False)
@@ -294,30 +304,34 @@ class LLMService(APIClient):
                             return item.no, ProcessingResult(
                                 success=True,
                                 data=result,
-                                generated_answer=result["content"].strip())
+                                generated_answer=result["content"].strip(),
+                            )
                         else:
-                            msg = result.get('message', '未知错误')
+                            msg = result.get("message", "未知错误")
                             return item.no, ProcessingResult(
                                 success=False,
                                 error=f"LLM返回失败: "
                                 f"success={result.get('success')}, "
-                                f"message={msg}")
+                                f"message={msg}",
+                            )
                     else:
                         error_text = await response.text()
                         return item.no, ProcessingResult(
                             success=False,
-                            error=f"HTTP {response.status}: {error_text[:200]}"
+                            error=f"HTTP {response.status}: {error_text[:200]}",
                         )
 
             except Exception as e:
-                return item.no, ProcessingResult(success=False,
-                                                 error=f"请求失败: {str(e)}")
+                return item.no, ProcessingResult(
+                    success=False, error=f"请求失败: {str(e)}"
+                )
 
         # 使用信号量控制并发数
         semaphore = asyncio.Semaphore(max_concurrent)
 
-        async def generate_with_semaphore(session: aiohttp.ClientSession,
-                                          item: OSPAItem):
+        async def generate_with_semaphore(
+            session: aiohttp.ClientSession, item: OSPAItem
+        ):
             async with semaphore:
                 return await generate_async(session, item)
 
@@ -347,18 +361,20 @@ class LLMService(APIClient):
         return results
 
     def generate_answers_sequential(
-            self,
-            items: List[OSPAItem],
-            temperature: float = 0.3,
-            progress_callback=None,
-            status_callback=None) -> Dict[int, ProcessingResult]:
+        self,
+        items: List[OSPAItem],
+        temperature: float = 0.3,
+        progress_callback=None,
+        status_callback=None,
+    ) -> Dict[int, ProcessingResult]:
         """顺序生成多个答案"""
         results = {}
 
         for i, item in enumerate(items):
             if status_callback:
-                status_callback(f"正在生成第 {item.no} 条数据的答案... "
-                                f"({i+1}/{len(items)})")
+                status_callback(
+                    f"正在生成第 {item.no} 条数据的答案... " f"({i+1}/{len(items)})"
+                )
 
             result = self.generate_answer(item, temperature)
             results[item.no] = result
@@ -372,25 +388,24 @@ class LLMService(APIClient):
 class BQAExtractService(APIClient):
     """BQA Extract API服务 - 多轮对话解耦"""
 
-    def extract_conversations(self,
-                              qa_lists: List[List[Dict[str, str]]],
-                              context_extraction_mode: str = "auto",
-                              preserve_session_info: bool = True,
-                              max_concurrent_processing: int = 3) -> Dict[str, Any]:
+    def extract_conversations(
+        self,
+        qa_lists: List[List[Dict[str, str]]],
+        context_extraction_mode: str = "auto",
+        preserve_session_info: bool = True,
+        max_concurrent_processing: int = 3,
+    ) -> Dict[str, Any]:
         """处理多轮对话拆解为独立BQA"""
         try:
             # 转换qa_lists格式
             formatted_qa_lists = []
             for i, qa_list in enumerate(qa_lists):
-                session_qa_list = {
-                    "session_id": f"session_{i+1}",
-                    "items": []
-                }
+                session_qa_list = {"session_id": f"session_{i+1}", "items": []}
 
                 for qa in qa_list:
                     formatted_qa = {
                         "question": qa.get("q", qa.get("question", "")),
-                        "answer": qa.get("a", qa.get("answer", ""))
+                        "answer": qa.get("a", qa.get("answer", "")),
                     }
                     session_qa_list["items"].append(formatted_qa)
 
@@ -400,12 +415,12 @@ class BQAExtractService(APIClient):
                 "qa_lists": formatted_qa_lists,
                 "context_extraction_mode": context_extraction_mode,
                 "preserve_session_info": preserve_session_info,
-                "max_concurrent_processing": max_concurrent_processing
+                "max_concurrent_processing": max_concurrent_processing,
             }
 
-            response = requests.post(f"{self.base_url}/bqa/extract",
-                                     json=extract_data,
-                                     timeout=600)
+            response = requests.post(
+                f"{self.base_url}/agent/bqa/extract", json=extract_data, timeout=600
+            )
 
             response.raise_for_status()
             return response.json()
@@ -432,11 +447,11 @@ class ServiceManager:
     def get_all_services(self) -> Dict[str, APIClient]:
         """获取所有服务实例"""
         return {
-            'config': self.config_service,
-            'reward': self.reward_service,
-            'backward': self.backward_service,
-            'llm': self.llm_service,
-            'bqa_extract': self.bqa_extract_service
+            "config": self.config_service,
+            "reward": self.reward_service,
+            "backward": self.backward_service,
+            "llm": self.llm_service,
+            "bqa_extract": self.bqa_extract_service,
         }
 
 
@@ -448,6 +463,7 @@ def run_async_in_streamlit(coro, *args, **kwargs):
         if loop.is_running():
             # 如果循环正在运行，创建新的事件循环
             import threading
+
             result = None
             exception = None
 
