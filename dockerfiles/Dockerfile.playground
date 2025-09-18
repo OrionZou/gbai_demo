@@ -35,7 +35,7 @@ RUN poetry config virtualenvs.create false \
     && poetry install \
     && rm -rf $POETRY_CACHE_DIR
 
-COPY ospa/ ./ospa/
+COPY data/ospa/ ./data/ospa/
 COPY .env_example .env
 
 # 创建非 root 用户
