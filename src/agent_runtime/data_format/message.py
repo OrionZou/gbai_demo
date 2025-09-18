@@ -28,7 +28,30 @@ class Message(BaseModel):
     extras: Optional[Dict[str, Any]] = None
 
     def to_openai_format(self) -> Dict[str, Any]:
-        msg: Dict[str, Any] = {"role": self.role, "content": self.content}
+        # 处理content格式转换
+        if isinstance(self.content, list):
+            # 多模态内容，转换为OpenAI格式
+            openai_content = []
+            for content_part in self.content:
+                if hasattr(content_part, 'root'):
+                    if hasattr(content_part.root, 'text'):
+                        # 文本内容
+                        openai_content.append({
+                            "type": "text",
+                            "text": content_part.root.text
+                        })
+                    elif hasattr(content_part.root, 'image_url'):
+                        # 图片内容
+                        openai_content.append({
+                            "type": "image_url",
+                            "image_url": {"url": content_part.root.image_url}
+                        })
+            content = openai_content
+        else:
+            # 字符串内容
+            content = self.content
+
+        msg: Dict[str, Any] = {"role": self.role, "content": content}
         if self.name:
             msg["name"] = self.name
         if self.extras:

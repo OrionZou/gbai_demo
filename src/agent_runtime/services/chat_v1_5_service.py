@@ -5,7 +5,7 @@ Chat V1.5 Service
 """
 
 import json
-from typing import List, Optional, Tuple, TYPE_CHECKING
+from typing import List, Optional, Tuple, TYPE_CHECKING, Union
 
 from agent_runtime.data_format.fsm import Memory
 from agent_runtime.interface.api_models import Setting
@@ -18,20 +18,16 @@ from agent_runtime.data_format.feedback import (
 from agent_runtime.interface.api_models import FeedbackSetting
 from agent_runtime.services.feedback_service import FeedbackService
 from agent_runtime.data_format.tool import RequestTool, SendMessageToUser
+from agent_runtime.data_format.message import Message
+from agent_runtime.data_format.fsm import State
 from agent_runtime.agents.select_actions_agent import SelectActionsAgent
 from agent_runtime.agents.state_select_agent import StateSelectAgent
 from agent_runtime.agents.new_state_agent import NewStateAgent
 from agent_runtime.clients.openai_llm_client import LLM
 from agent_runtime.data_format.tool import ActionExecutor
-from agent_runtime.config.loader import LLMSetting
 from agent_runtime.logging.logger import logger
-
-if TYPE_CHECKING:
-    from agent_runtime.data_format.fsm import State
-
-# Additional imports for V2 service functionality
-from agent_runtime.clients.weaviate_client import WeaviateClient
-from agent_runtime.clients.openai_embedding_client import OpenAIEmbeddingClient
+from agent_runtime.utils.token_counter import get_token_counter
+    
 
 
 class ChatService:
@@ -57,19 +53,24 @@ class ChatService:
 
         logger.debug("ChatService initialized with static agents")
 
-    def update_agents_llm_engine(self, llm_engine: LLM) -> None:
+    def update_agents_llm_engine(self, llm_engine: LLM, session_id: Optional[str] = None) -> None:
         """
         更新agents的LLM引擎
 
         Args:
             llm_engine: 新的LLM引擎实例
+            session_id: 可选的会话ID，用于token统计
         """
+        # 设置session_id
+        if session_id:
+            llm_engine.session_id = session_id
+
         # 更新需要LLM的agents
         self.select_actions_agent.llm_engine = llm_engine
         self.state_select_agent.llm_engine = llm_engine
         self.new_state_agent.llm_engine = llm_engine
 
-        logger.debug(f"Updated agents with new LLM engine: {llm_engine.model}")
+        logger.debug(f"Updated agents with new LLM engine: {llm_engine.model}, session: {session_id}")
 
     def link_feedback_service(self, feedback_service: FeedbackService) -> None:
         """
@@ -145,7 +146,7 @@ class ChatService:
 
     async def chat_step(
         self,
-        user_message: str = "",
+        user_message: Union[str, List[Message]] = "",
         edited_last_response: str = "",
         recall_last_user_message: bool = False,
         settings: Optional[Setting] = None,
@@ -177,10 +178,35 @@ class ChatService:
         if request_tools is None:
             request_tools = []
 
+        # 处理ChatML格式的用户消息
+        if isinstance(user_message, list):
+            # 如果是ChatML格式，提取用户消息内容
+            user_message_str = self._extract_user_message_from_chatml(user_message)
+        else:
+            user_message_str = user_message
+
+        # 获取已配置的session_id（从LLM引擎获取）
+        session_id = getattr(self.select_actions_agent.llm_engine, 'session_id', None)
+        if not session_id:
+            # 如果没有配置session_id，创建一个新的
+            session_id = f"{settings.agent_name}_{id(memory)}"
+            logger.debug(f"Created new session_id: {session_id}")
+        else:
+            logger.debug(f"Using existing session_id from LLM engine: {session_id}")
+
+        # 创建或获取token统计会话
+        token_counter = get_token_counter()
+        token_counter.create_session(session_id)
+
         # 记录日志
-        logger.info(f"Starting chat step for agent {settings.agent_name}")
+        logger.info(f"Starting chat step for agent {settings.agent_name}, session {session_id}")
 
         try:
+            # 特殊处理：如果是ChatML格式且包含图片，直接调用LLM
+            if isinstance(user_message, list) and self._contains_images(user_message):
+                return await self._handle_multimodal_chat(
+                    user_message, settings, memory, session_id
+                )
 
             # Step 1: 处理撤回逻辑
             message_tool_name = "send_message_to_user"
@@ -212,14 +238,14 @@ class ChatService:
                     action = memory.history[-1].actions[send_msg_action_idx]
                     action.arguments = {"agent_message": edited_last_response}
                 action = memory.history[-1].actions[send_msg_action_idx]
-                action.result = {"user_message": user_message}
+                action.result = {"user_message": user_message_str}
             # 如果没有现存的 send_message_to_user 动作且有新消息
-            elif edited_last_response or user_message:
+            elif edited_last_response or user_message_str:
                 memory.history[-1].actions.append(
                     V2Action(
                         name=message_tool_name,
                         arguments={"agent_message": edited_last_response},
-                        result={"user_message": user_message},
+                        result={"user_message": user_message_str},
                     )
                 )
                 send_msg_action_idx = len(memory.history[-1].actions) - 1
@@ -244,17 +270,22 @@ class ChatService:
                 action = memory.history[-1].actions[send_msg_action_idx]
                 response = (action.arguments or {}).get("agent_message", "")
 
+            # 获取token统计
+            token_counter = get_token_counter()
+            stats = token_counter.get_session_stats(session_id)
+
             result = {
                 "response": response,
                 "memory": memory,
                 "result_type": "Success",
-                "llm_calling_times": 0,
-                "total_input_token": 0,
-                "total_output_token": 0,
+                "llm_calling_times": stats.total_requests if stats else 0,
+                "total_input_token": stats.input_tokens if stats else 0,
+                "total_output_token": stats.output_tokens if stats else 0,
             }
 
             logger.info(
-                f"Chat step completed successfully for " f"agent {settings.agent_name}"
+                f"Chat step completed successfully for agent {settings.agent_name}, "
+                f"tokens used: {stats.total_tokens if stats else 0}"
             )
             return result
 
@@ -399,6 +430,22 @@ class ChatService:
             # 查询动作反馈（如果有FeedbackService链接）
             action_feedbacks = []
             if self.feedback_service:
+                # 安全地序列化result对象
+                try:
+                    result_data = memory.history[-1].actions[0].result
+                    if hasattr(result_data, 'model_dump'):
+                        # 如果是Pydantic模型，使用model_dump
+                        query_data = result_data.model_dump(mode="json")
+                    else:
+                        # 否则直接使用
+                        query_data = result_data
+
+                    query_str = json.dumps(query_data, ensure_ascii=False)
+                except (TypeError, AttributeError) as e:
+                    # 如果序列化失败，使用字符串表示
+                    logger.warning(f"Failed to serialize result for feedback query: {e}")
+                    query_str = str(memory.history[-1].actions[0].result)
+
                 action_feedbacks = await self.feedback_service.query_feedbacks(
                     settings=FeedbackSetting(
                         vector_db_url=settings.vector_db_url,
@@ -406,9 +453,7 @@ class ChatService:
                         agent_name=settings.agent_name,
                         embedding_api_key=settings.embedding_api_key or "",
                     ),
-                    query=json.dumps(
-                        memory.history[-1].actions[0].result, ensure_ascii=False
-                    ),
+                    query=query_str,
                     tags=observation_tag + state_tag,
                 )
 
@@ -436,6 +481,103 @@ class ChatService:
         )
 
         return memory
+
+    def _extract_user_message_from_chatml(self, messages: List[Message]) -> str:
+        """从ChatML格式消息中提取用户消息内容"""
+        user_messages = []
+
+        for message in messages:
+            if message.role == "user":
+                if isinstance(message.content, str):
+                    user_messages.append(message.content)
+                elif isinstance(message.content, list):
+                    # 处理混合内容（文本+图片）
+                    text_parts = []
+                    for content_part in message.content:
+                        if hasattr(content_part, 'root'):
+                            if hasattr(content_part.root, 'text'):
+                                text_parts.append(content_part.root.text)
+                            elif hasattr(content_part.root, 'type'):
+                                if content_part.root.type == 'image_url':
+                                    text_parts.append("[图片]")
+                    if text_parts:
+                        user_messages.append(" ".join(text_parts))
+
+        # 返回所有用户消息，用换行分隔
+        return "\n".join(user_messages) if user_messages else ""
+
+    def _contains_images(self, messages: List[Message]) -> bool:
+        """检查消息列表是否包含图片"""
+        for message in messages:
+            if isinstance(message.content, list):
+                for content_part in message.content:
+                    if (hasattr(content_part, 'root') and
+                        hasattr(content_part.root, 'type') and
+                        content_part.root.type == 'image_url'):
+                        return True
+        return False
+
+    async def _handle_multimodal_chat(
+        self,
+        messages: List[Message],
+        settings: Setting,
+        memory: Memory,
+        session_id: str
+    ) -> dict:
+        """处理包含图片的多模态聊天"""
+        logger.info("Handling multimodal chat with images")
+
+        # 转换为OpenAI格式
+        openai_messages = []
+        for message in messages:
+            openai_msg = message.to_openai_format()
+            openai_messages.append(openai_msg)
+
+        # 添加系统提示
+        if settings.global_prompt:
+            openai_messages.insert(0, {
+                "role": "system",
+                "content": settings.global_prompt
+            })
+
+        # 直接调用LLM
+        try:
+            # 使用传入的session_id
+            token_counter = get_token_counter()
+
+            llm_engine = self.select_actions_agent.llm_engine
+            llm_engine.session_id = session_id  # 设置session_id
+
+            # 多模态聊天强制使用non-streaming模式以获取准确的token统计
+            response = await llm_engine.ask(
+                messages=openai_messages,
+                temperature=settings.temperature,
+                stream=False
+            )
+
+            # 获取token统计
+            stats = token_counter.get_session_stats(session_id)
+
+            # 构建响应
+            return {
+                "response": response,
+                "memory": memory,
+                "result_type": "Success",
+                "llm_calling_times": 1,
+                "total_input_token": stats.input_tokens if stats else 0,
+                "total_output_token": stats.output_tokens if stats else 0,
+            }
+
+        except Exception as e:
+            logger.error(f"Multimodal chat error: {e}")
+            return {
+                "response": f"处理图片消息时出错: {str(e)}",
+                "memory": memory,
+                "result_type": "Error",
+                "llm_calling_times": 0,
+                "total_input_token": 0,
+                "total_output_token": 0,
+            }
 
     def get_stats(self) -> dict:
         """获取服务统计信息"""

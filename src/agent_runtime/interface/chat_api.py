@@ -81,8 +81,9 @@ def _get_chat_service(settings: Setting) -> ChatService:
     # 创建ChatService并传入LLM引擎
     chat_service = ChatService()
 
-    # 更新agents的LLM引擎
-    chat_service.update_agents_llm_engine(llm_engine)
+    # 更新agents的LLM引擎（带session_id用于token统计）
+    session_id = f"{settings.agent_name}_{id(chat_service)}"
+    chat_service.update_agents_llm_engine(llm_engine, session_id)
 
     # 创建FeedbackSetting对象
     feedback_setting = FeedbackSetting(
@@ -108,236 +109,320 @@ async def generate_chat(
         ChatRequest,
         Body(
             openapi_examples={
-                "openai_simple": {
-                    "summary": "Simple Chat Example with OpenAI (String Format)",
-                    "description": "Simple chat example with OpenAI using string format (backward compatible).",
+                "openai_string_format": {
+                    "summary": "OpenAI Chat with String Format",
+                    "description": "基本的 OpenAI 聊天，使用簡單字串格式的用戶訊息（向後兼容）。",
                     "value": {
-                        "user_message": "你好",
+                        "user_message": "您好，請問您今天可以如何協助我？",
                         "edited_last_response": "",
                         "recall_last_user_message": False,
                         "settings": {
-                            "api_key": "your_api_key",
-                            "chat_model": "gpt-4o",
-                            "base_url": "https://api.openai.com/v1/",
-                            "top_p": 1.0,
-                            "temperature": 1.0,
-                            "top_k": 5,
-                            "vector_db_url": "http://weaviate:8080",
-                            "global_prompt": "你是一個專業的顧問，有耐心且親切地回答使用者任何問題，使用繁體中文:台灣。",
-                            "max_history_len": 256,
-                            "state_machine": {},
-                            "agent_name": "TestAgent",
-                        },
-                        "memory": {
-                            "history": [],
-                        },
-                        "request_tools": [],
-                    },
-                },
-                "openai_chatml": {
-                    "summary": "OpenAI Chat with ChatML Messages Format",
-                    "description": "Chat example using ChatML format with multiple messages.",
-                    "value": {
-                        "user_message": [
-                            {
-                                "role": "system",
-                                "content": "你是一个专业的AI助手，请用中文回答问题。",
-                            },
-                            {"role": "user", "content": "你好，请介绍一下你自己"},
-                        ],
-                        "edited_last_response": "",
-                        "recall_last_user_message": False,
-                        "settings": {
-                            "api_key": "your_api_key",
-                            "chat_model": "gpt-4o",
-                            "base_url": "https://api.openai.com/v1/",
-                            "top_p": 1.0,
-                            "temperature": 1.0,
-                            "top_k": 5,
-                            "vector_db_url": "http://weaviate:8080",
-                            "global_prompt": "你是一個專業的顧問，有耐心且親切地回答使用者任何問題，使用繁體中文:台灣。",
-                            "max_history_len": 256,
-                            "state_machine": {},
-                            "agent_name": "TestAgent",
-                        },
-                        "memory": {
-                            "history": [],
-                        },
-                        "request_tools": [],
-                    },
-                },
-                "deepinfra_simple": {
-                    "summary": "Simple Chat Example with Deepinfra",
-                    "description": "Simple chat example with Deepinfra.",
-                    "value": {
-                        "user_message": "你好",
-                        "edited_last_response": "",
-                        "recall_last_user_message": False,
-                        "settings": {
-                            "api_key": "your_api_key",
-                            "chat_model": "deepseek-ai/DeepSeek-V3",
-                            "base_url": "https://api.deepinfra.com/v1/openai",
-                            "top_p": 1.0,
-                            "temperature": 1.0,
-                            "top_k": 5,
-                            "vector_db_url": "http://weaviate:8080",
-                            "global_prompt": "你是一個專業的顧問，有耐心且親切地回答使用者任何問題，使用繁體中文:台灣。",
-                            "max_history_len": 256,
-                            "state_machine": {},
-                            "agent_name": "TestAgent",
-                        },
-                        "memory": {
-                            "history": [],
-                        },
-                        "request_tools": [],
-                    },
-                },
-                "deepseek_simple": {
-                    "summary": "Simple Chat Example with Deepseek",
-                    "description": "Simple chat example with Deepseek.",
-                    "value": {
-                        "user_message": "你好",
-                        "edited_last_response": "",
-                        "recall_last_user_message": False,
-                        "settings": {
-                            "api_key": "your_api_key",
-                            "chat_model": "deepseek-chat",
-                            "base_url": "https://api.deepseek.com/v1",
-                            "top_p": 1.0,
-                            "temperature": 1.0,
-                            "top_k": 5,
-                            "vector_db_url": "http://weaviate:8080",
-                            "global_prompt": "你是一個專業的顧問，有耐心且親切地回答使用者任何問題，使用繁體中文:台灣。",
-                            "max_history_len": 256,
-                            "state_machine": {},
-                            "agent_name": "TestAgent",
-                        },
-                        "memory": {
-                            "history": [],
-                        },
-                        "request_tools": [],
-                    },
-                },
-                "openai_completed": {
-                    "summary": "OpenAI API completed example",
-                    "description": "Chat example with OpenAI API, using a state machine and request tools.",
-                    "value": {
-                        "user_message": "你好",
-                        "edited_last_response": "",
-                        "recall_last_user_message": False,
-                        "settings": {
-                            "api_key": "your_api_key",
-                            "chat_model": "gpt-4o",
-                            "base_url": "https://api.openai.com/v1/",
-                            "top_p": 1.0,
-                            "temperature": 1.0,
-                            "top_k": 5,
-                            "vector_db_url": "http://weaviate:8080",
-                            "global_prompt": "你是一個專業的顧問，有耐心且親切地回答使用者任何問題，使用繁體中文:台灣。",
-                            "max_history_len": 256,
-                            "agent_name": "TestAgent",
-                            "state_machine": {
-                                "initial_state_name": "打招呼",
-                                "states": [
-                                    {
-                                        "name": "打招呼",
-                                        "scenario": "顧問主動問候使用者",
-                                        "instruction": "有禮貌的問候使用者",
-                                    },
-                                    {
-                                        "name": "時間問題",
-                                        "scenario": "使用者提出跟時間相關的問題",
-                                        "instruction": "適時地使用工具並回答使用者的時間問題",
-                                    },
-                                    {
-                                        "name": "天氣問題",
-                                        "scenario": "使用者提出跟天氣相關的問題",
-                                        "instruction": "適時地使用工具並回答使用者的天氣問題",
-                                    },
-                                    {
-                                        "name": "異議處理",
-                                        "scenario": "使用者提到其他的話題",
-                                        "instruction": "試圖引導使用者回原本的話題",
-                                    },
-                                ],
-                                "out_transitions": {
-                                    "打招呼": ["時間問題", "天氣問題"],
-                                    "時間問題": ["天氣問題"],
-                                    "天氣問題": ["時間問題"],
-                                },
-                            },
-                        },
-                        "memory": {},
-                        "request_tools": [
-                            {
-                                "name": "get_time",
-                                "description": "Get current time.",
-                                "url": "https://timeapi.io/api/time/current/coordinate",
-                                "method": "GET",
-                                "headers": {"Content-Type": "application/json"},
-                                "request_params": {
-                                    "latitude": {
-                                        "type": ["number", "null"],
-                                        "description": "The latitude coordinate.",
-                                    },
-                                    "longitude": {
-                                        "type": ["number", "null"],
-                                        "description": "The longitude coordinate.",
-                                    },
-                                },
-                                "request_json": None,
-                            },
-                            {
-                                "name": "get_weather",
-                                "description": "Get weather.",
-                                "url": "https://api.open-meteo.com/v1/forecast?current=temperature_2m,wind_speed_10m,weather_code",
-                                "method": "GET",
-                                "headers": {"Content-Type": "application/json"},
-                                "request_params": {
-                                    "latitude": {
-                                        "type": "number",
-                                        "description": "The latitude coordinate.",
-                                    },
-                                    "longitude": {
-                                        "type": "number",
-                                        "description": "The longitude coordinate.",
-                                    },
-                                },
-                                "request_json": None,
-                            },
-                        ],
-                    },
-                },
-                "openai_chatml_conversation": {
-                    "summary": "OpenAI Multi-turn Conversation with ChatML",
-                    "description": "Multi-turn conversation example using ChatML format.",
-                    "value": {
-                        "user_message": [
-                            {
-                                "role": "system",
-                                "content": "你是一个专业的技术顾问，擅长解答编程和技术问题。",
-                            },
-                            {"role": "user", "content": "什么是 REST API？"},
-                            {
-                                "role": "assistant",
-                                "content": "REST API 是一种基于 HTTP 协议的 Web 服务架构风格，它使用标准的 HTTP 方法（GET、POST、PUT、DELETE）来操作资源。",
-                            },
-                            {"role": "user", "content": "能给我一个具体的例子吗？"},
-                        ],
-                        "edited_last_response": "",
-                        "recall_last_user_message": False,
-                        "settings": {
-                            "api_key": "your_api_key",
+                            "api_key": "your-openai-api-key",
                             "chat_model": "gpt-4o",
                             "base_url": "https://api.openai.com/v1/",
                             "top_p": 1.0,
                             "temperature": 0.7,
                             "top_k": 5,
                             "vector_db_url": "http://weaviate:8080",
-                            "global_prompt": "你是一个专业的技术顾问，请详细且准确地回答技术问题。",
+                            "global_prompt": "您是一個樂於助人的 AI 助手。請提供清晰準確的回應，使用繁體中文。",
                             "max_history_len": 256,
                             "state_machine": {},
-                            "agent_name": "TechAdvisor",
+                            "agent_name": "OpenAIAgent",
+                        },
+                        "memory": {
+                            "history": [],
+                        },
+                        "request_tools": [],
+                    },
+                },
+                "openai_chatml_messages": {
+                    "summary": "OpenAI Chat with ChatML Messages Format",
+                    "description": "使用 ChatML 訊息格式的 OpenAI 聊天，包含系統、用戶和助手角色。",
+                    "value": {
+                        "user_message": [
+                            {
+                                "role": "system",
+                                "content": "您是一個樂於助人的 AI 助手，提供詳細準確的回應，使用繁體中文。",
+                            },
+                            {"role": "user", "content": "什麼是人工智慧？它是如何運作的？"},
+                        ],
+                        "edited_last_response": "",
+                        "recall_last_user_message": False,
+                        "settings": {
+                            "api_key": "your-openai-api-key",
+                            "chat_model": "gpt-4o",
+                            "base_url": "https://api.openai.com/v1/",
+                            "top_p": 1.0,
+                            "temperature": 0.7,
+                            "top_k": 5,
+                            "vector_db_url": "http://weaviate:8080",
+                            "global_prompt": "您是一位專業的 AI 助手，具備科技和科學領域的專業知識，請使用繁體中文回應。",
+                            "max_history_len": 256,
+                            "state_machine": {},
+                            "agent_name": "OpenAIAssistant",
+                        },
+                        "memory": {
+                            "history": [],
+                        },
+                        "request_tools": [],
+                    },
+                },
+                "deepinfra_completed_chatml": {
+                    "summary": "DeepInfra completed example with ChatML Messages Format",
+                    "description": "完整的 DeepInfra 聊天範例，使用 ChatML 格式，具備多輪對話和進階功能。",
+                    "value": {
+                        "user_message": [
+                            {
+                                "role": "system",
+                                "content": "您是由 DeepInfra 基礎架構驅動的 AI 助手。請提供全面且結構良好的回應，使用繁體中文。",
+                            },
+                            {"role": "user", "content": "使用雲端基礎的 AI 推理有什麼好處？"},
+                            {
+                                "role": "assistant",
+                                "content": "雲端基礎的 AI 推理提供幾個主要優點，包括可擴展性、成本效益，以及無需預先投資即可存取強大硬體。",
+                            },
+                            {"role": "user", "content": "請您詳細說明可擴展性這個方面好嗎？"},
+                        ],
+                        "edited_last_response": "",
+                        "recall_last_user_message": False,
+                        "settings": {
+                            "api_key": "your-deepinfra-api-key",
+                            "chat_model": "meta-llama/Meta-Llama-3.1-405B-Instruct",
+                            "base_url": "https://api.deepinfra.com/v1/openai",
+                            "top_p": 0.9,
+                            "temperature": 0.7,
+                            "top_k": 5,
+                            "vector_db_url": "http://weaviate:8080",
+                            "global_prompt": "您是具備雲端運算和 AI 基礎架構專業知識的知識型 AI 助手。請提供詳細實用的見解，使用繁體中文。",
+                            "max_history_len": 512,
+                            "state_machine": {
+                                "initial_state_name": "諮詢服務",
+                                "states": [
+                                    {
+                                        "name": "諮詢服務",
+                                        "scenario": "提供 AI 和雲端主題的專家諮詢",
+                                        "instruction": "進行詳細的技術討論並提供專家見解",
+                                    },
+                                    {
+                                        "name": "深度分析",
+                                        "scenario": "使用者需要詳細技術資訊",
+                                        "instruction": "提供全面的技術解釋和實際範例",
+                                    },
+                                    {
+                                        "name": "解決方案設計",
+                                        "scenario": "使用者需要協助設計解決方案",
+                                        "instruction": "根據需求協助設計和架構 AI 解決方案",
+                                    },
+                                ],
+                                "out_transitions": {
+                                    "諮詢服務": ["深度分析", "解決方案設計"],
+                                    "深度分析": ["解決方案設計", "諮詢服務"],
+                                    "解決方案設計": ["深度分析", "諮詢服務"],
+                                },
+                            },
+                            "agent_name": "DeepInfraConsultant",
+                        },
+                        "memory": {
+                            "history": [],
+                        },
+                        "request_tools": [],
+                    },
+                },
+                "deepseek_completed_chatml": {
+                    "summary": "Deepseek completed example with ChatML Messages Format",
+                    "description": "完整的 Deepseek 聊天範例，使用 ChatML 格式，具備進階對話管理功能。",
+                    "value": {
+                        "user_message": [
+                            {
+                                "role": "system",
+                                "content": "您是由 Deepseek 驅動的智慧 AI 助手。請提供有用、準確且深思熟慮的回應，使用繁體中文。",
+                            },
+                            {"role": "user", "content": "請問您可以解釋大型語言模型是如何運作的嗎？"},
+                        ],
+                        "edited_last_response": "",
+                        "recall_last_user_message": False,
+                        "settings": {
+                            "api_key": "your-deepseek-api-key",
+                            "chat_model": "deepseek-chat",
+                            "base_url": "https://api.deepseek.com/v1",
+                            "top_p": 0.95,
+                            "temperature": 0.8,
+                            "top_k": 5,
+                            "vector_db_url": "http://weaviate:8080",
+                            "global_prompt": "您是專精於科技和科學解釋的專家 AI 助手。請提供清晰詳細的回應，使用繁體中文。",
+                            "max_history_len": 512,
+                            "state_machine": {
+                                "initial_state_name": "介紹",
+                                "states": [
+                                    {
+                                        "name": "介紹",
+                                        "scenario": "與使用者的初次互動",
+                                        "instruction": "介紹自己並了解使用者的需求",
+                                    },
+                                    {
+                                        "name": "技術解釋",
+                                        "scenario": "使用者要求技術解釋",
+                                        "instruction": "提供詳細準確的技術解釋並舉例說明",
+                                    },
+                                    {
+                                        "name": "澄清說明",
+                                        "scenario": "使用者需要澄清或有後續問題",
+                                        "instruction": "詢問澄清問題並提供針對性的解釋",
+                                    },
+                                ],
+                                "out_transitions": {
+                                    "介紹": ["技術解釋", "澄清說明"],
+                                    "技術解釋": ["澄清說明", "技術解釋"],
+                                    "澄清說明": ["技術解釋", "介紹"],
+                                },
+                            },
+                            "agent_name": "DeepseekExpert",
+                        },
+                        "memory": {
+                            "history": [],
+                        },
+                        "request_tools": [],
+                    },
+                },
+                "openai_completed_chatml": {
+                    "summary": "OpenAI API completed example with ChatML Messages Format",
+                    "description": "完整的 OpenAI 聊天範例，使用 ChatML 格式，包含狀態機、工具和對話歷史。",
+                    "value": {
+                        "user_message": [
+                            {
+                                "role": "system",
+                                "content": "您是一位專業助手，協助使用者獲取時間和天氣資訊。請提供準確有用的回應，使用繁體中文。",
+                            },
+                            {"role": "user", "content": "您好！請問您可以幫我查詢現在的時間嗎？"},
+                        ],
+                        "edited_last_response": "",
+                        "recall_last_user_message": False,
+                        "settings": {
+                            "api_key": "your-openai-api-key",
+                            "chat_model": "gpt-4o",
+                            "base_url": "https://api.openai.com/v1/",
+                            "top_p": 1.0,
+                            "temperature": 0.7,
+                            "top_k": 5,
+                            "vector_db_url": "http://weaviate:8080",
+                            "global_prompt": "您是專門提供時間和天氣資訊的專業助手，請使用繁體中文回應。",
+                            "max_history_len": 256,
+                            "agent_name": "TimeWeatherAgent",
+                            "state_machine": {
+                                "initial_state_name": "打招呼",
+                                "states": [
+                                    {
+                                        "name": "打招呼",
+                                        "scenario": "助手向使用者問候",
+                                        "instruction": "禮貌地問候使用者並詢問如何協助",
+                                    },
+                                    {
+                                        "name": "時間查詢",
+                                        "scenario": "使用者詢問時間相關問題",
+                                        "instruction": "使用適當的工具準確回答時間相關問題",
+                                    },
+                                    {
+                                        "name": "天氣查詢",
+                                        "scenario": "使用者詢問天氣相關問題",
+                                        "instruction": "使用適當的工具提供天氣資訊",
+                                    },
+                                    {
+                                        "name": "一般協助",
+                                        "scenario": "使用者詢問其他主題",
+                                        "instruction": "禮貌地引導對話回到時間和天氣主題",
+                                    },
+                                ],
+                                "out_transitions": {
+                                    "打招呼": ["時間查詢", "天氣查詢", "一般協助"],
+                                    "時間查詢": ["天氣查詢", "一般協助"],
+                                    "天氣查詢": ["時間查詢", "一般協助"],
+                                    "一般協助": ["時間查詢", "天氣查詢"],
+                                },
+                            },
+                        },
+                        "memory": {
+                            "history": [],
+                        },
+                        "request_tools": [
+                            {
+                                "name": "get_time",
+                                "description": "取得指定座標的目前時間",
+                                "url": "https://timeapi.io/api/time/current/coordinate",
+                                "method": "GET",
+                                "headers": {"Content-Type": "application/json"},
+                                "request_params": {
+                                    "latitude": {
+                                        "type": ["number", "null"],
+                                        "description": "緯度座標",
+                                    },
+                                    "longitude": {
+                                        "type": ["number", "null"],
+                                        "description": "經度座標",
+                                    },
+                                },
+                                "request_json": None,
+                            },
+                            {
+                                "name": "get_weather",
+                                "description": "取得目前天氣資訊",
+                                "url": "https://api.open-meteo.com/v1/forecast?current=temperature_2m,wind_speed_10m,weather_code",
+                                "method": "GET",
+                                "headers": {"Content-Type": "application/json"},
+                                "request_params": {
+                                    "latitude": {
+                                        "type": "number",
+                                        "description": "緯度座標",
+                                    },
+                                    "longitude": {
+                                        "type": "number",
+                                        "description": "經度座標",
+                                    },
+                                },
+                                "request_json": None,
+                            },
+                        ],
+                    },
+                },
+                "openai_with_image": {
+                    "summary": "OpenAI Chat with Image",
+                    "description": "包含圖像處理功能的 OpenAI 聊天範例，使用多模態 ChatML 格式。",
+                    "value": {
+                        "user_message": [
+                            {
+                                "role": "system",
+                                "content": "您是一位樂於助人的 AI 助手，能夠分析圖像並回答視覺內容相關問題。請提供詳細準確的描述，使用繁體中文。",
+                            },
+                            {
+                                "role": "user",
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": "您在這張圖片中看到什麼？請詳細描述。"
+                                    },
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {
+                                            "url": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k=",
+                                            "detail": "high"
+                                        }
+                                    }
+                                ]
+                            }
+                        ],
+                        "edited_last_response": "",
+                        "recall_last_user_message": False,
+                        "settings": {
+                            "api_key": "your-openai-api-key",
+                            "chat_model": "gpt-4o",
+                            "base_url": "https://api.openai.com/v1/",
+                            "top_p": 1.0,
+                            "temperature": 0.7,
+                            "top_k": 5,
+                            "vector_db_url": "http://weaviate:8080",
+                            "global_prompt": "您是專業的圖像分析助手。請提供詳細準確的視覺內容描述和見解，使用繁體中文。",
+                            "max_history_len": 256,
+                            "state_machine": {},
+                            "agent_name": "VisionAssistant",
                         },
                         "memory": {
                             "history": [],
@@ -364,12 +449,17 @@ async def generate_chat(
         # request_tools 已经是 RequestTool 对象列表，直接使用
         request_tools = request.request_tools
 
-        # 从 ChatRequest 中获取用户消息内容（兼容 str 和 ChatML 格式）
-        user_message_content = request.get_user_content()
+        # 处理用户消息格式
+        if isinstance(request.user_message, list):
+            # ChatML格式，需要特殊处理多模态内容
+            user_message = request.get_messages()
+        else:
+            # 字符串格式，保持向后兼容
+            user_message = request.user_message
 
         # 调用ChatService的chat_step方法
         result = await chat_service.chat_step(
-            user_message=user_message_content,
+            user_message=user_message,
             edited_last_response=request.edited_last_response,
             recall_last_user_message=request.recall_last_user_message,
             settings=settings,

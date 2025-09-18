@@ -14,7 +14,11 @@
       "Bash(sed:*)",
       "Bash(do)",
       "Bash(echo:*)",
-      "Read(///**)"
+      "Read(///**)",
+      "Bash(lsof:*)",
+      "Bash(PYTHONPATH=./src python:*)",
+      "Bash(PYTHONPATH=\"./src\" python:*)",
+      "Bash(/dev/null)"
     ],
     "deny": [],
     "ask": []

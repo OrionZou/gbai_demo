@@ -25,6 +25,11 @@ class JSONContent(BaseModel):
     type: Literal["json"] = Field("json", description="内容类型")
     json_data: dict = Field(..., description="JSON 对象格式数据")
 
+class ImageContent(BaseModel):
+    """结构化 JSON 格式内容"""
+    type: Literal["image_url"] = Field("image_url", description="内容类型")
+    image_url: str = Field(..., description="图片数据")
+
 
 class BinaryContent(BaseModel):
     """二进制内容（例如图片、文件）"""
@@ -36,4 +41,4 @@ class BinaryContent(BaseModel):
 
 # -------- 核心内容模型 --------
 ContentPart = RootModel[Union[TextContent, MarkdownContent, HTMLContent,
-                              JSONContent, BinaryContent]]
+                              JSONContent, BinaryContent, ImageContent]]

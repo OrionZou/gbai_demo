@@ -8,6 +8,7 @@ from tenacity import retry, stop_after_attempt, wait_random_exponential
 from agent_runtime.config.loader import LLMSetting
 from agent_runtime.clients.utils import fix_json
 from agent_runtime.logging.logger import logger
+from agent_runtime.utils.token_counter import get_token_counter
 
 ToolChoiceLiteral = Literal["none", "auto", "required"]
 
@@ -19,6 +20,7 @@ class LLM:
         self,
         config_name: str = "openai",
         llm_setting: LLMSetting = LLMSetting(),
+        session_id: Optional[str] = None,
     ):
         # if self._mark_initialized_once():
         #     return  # 已初始化过（同一 key 再次调用会直接返回）
@@ -28,6 +30,7 @@ class LLM:
         self.base_url: Optional[str] = llm_setting.base_url
         self.api_key: Optional[str] = llm_setting.api_key
         self.timeout: Optional[float] = llm_setting.timeout
+        self.session_id: Optional[str] = session_id
 
         # 采样与配额
         self.max_completion_tokens: int = (
@@ -72,6 +75,17 @@ class LLM:
                 if not rsp.choices or not rsp.choices[0].message.content:
                     raise ValueError("Empty or invalid response from LLM")
 
+                # 记录token使用量
+                if hasattr(rsp, 'usage') and rsp.usage:
+                    session_id = getattr(self, 'session_id', None)
+                    token_counter = get_token_counter()
+                    token_counter.record_usage(
+                        input_tokens=rsp.usage.prompt_tokens,
+                        output_tokens=rsp.usage.completion_tokens,
+                        model=self.model,
+                        session_id=session_id
+                    )
+                    logger.debug(f"Recorded token usage: {rsp.usage.prompt_tokens} input + {rsp.usage.completion_tokens} output for session: {session_id}")
 
                 return rsp.choices[0].message.content
 
@@ -91,13 +105,28 @@ class LLM:
                 stream_options=None,
             )
             chunks: List[str] = []
+            usage_data = None
             async for chunk in rsp:
                 if chunk.choices and chunk.choices[0].delta.content:
                     delta = chunk.choices[0].delta.content
                     chunks.append(delta)
+                # 捕获usage信息（通常在最后一个chunk中）
+                if hasattr(chunk, 'usage') and chunk.usage:
+                    usage_data = chunk.usage
             #         print(delta, end="", flush=True)
             # print()
 
+            # 记录token使用量（streaming模式）
+            if usage_data:
+                session_id = getattr(self, 'session_id', None)
+                token_counter = get_token_counter()
+                token_counter.record_usage(
+                    input_tokens=usage_data.prompt_tokens,
+                    output_tokens=usage_data.completion_tokens,
+                    model=self.model,
+                    session_id=session_id
+                )
+                logger.debug(f"Recorded streaming token usage: {usage_data.prompt_tokens} input + {usage_data.completion_tokens} output for session: {session_id}")
 
             text = "".join(chunks).strip()
             if not text:
@@ -151,6 +180,15 @@ class LLM:
             if not rsp.choices or not rsp.choices[0].message:
                 raise ValueError("Invalid or empty response from LLM (no message)")
 
+            # 记录token使用量
+            if hasattr(rsp, 'usage') and rsp.usage:
+                token_counter = get_token_counter()
+                token_counter.record_usage(
+                    input_tokens=rsp.usage.prompt_tokens,
+                    output_tokens=rsp.usage.completion_tokens,
+                    model=self.model,
+                    session_id=getattr(self, 'session_id', None)
+                )
 
             return rsp.choices[0].message
 
